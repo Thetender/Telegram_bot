@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Заявка №{{ req.id }}{% endblock %}
+{% block content %}
+<p><a href="/admin/consultations">← Консультації</a></p>
+<h1>Заявка №{{ req.id }} <span class="badge {{ req.status }}">{{ status_labels[req.status] }}</span></h1>
+<div class="grid2">
+  <div class="card"><dl class="kv">
+    <dt>Користувач</dt><dd><a href="/admin/users/{{ req.user_id }}">{{ req.contact_name or '—' }}</a></dd>
+    <dt>Телефон</dt><dd>{{ req.contact_phone or '—' }}</dd>
+    <dt>Telegram</dt><dd>{{ ('@' ~ req.contact_username) if req.contact_username else '—' }}</dd>
+  </dl></div>
+  <div class="card"><dl class="kv">
+    <dt>Створено</dt><dd>{{ fmt_dt(req.created_at) }}</dd>
+    <dt>Взято в роботу</dt><dd>{{ fmt_dt(req.claimed_at) }}</dd>
+    <dt>Менеджер</dt><dd>{% if manager %}<a href="/admin/users/{{ manager.id }}">{{ manager.name }}</a>{% else %}—{% endif %}</dd>
+    <dt>Завершено</dt><dd>{{ fmt_dt(req.completed_at) }}</dd>
+    <dt>Результат</dt><dd>{{ result_labels.get(req.result, '—') }}</dd>
+    {% if req.status == 'CLOSED_BY_ADMIN' %}<dt>Закрив</dt><dd>{{ closer.name if closer else '—' }} · {{ fmt_dt(req.closed_at) }}</dd>{% endif %}
+  </dl></div>
+</div>
+<div class="section" style="margin-top:16px">
+{% if req.status in ('NEW', 'IN_PROGRESS') %}
+  <form method="post" action="/admin/consultations/{{ req.id }}/close" onsubmit="return confirm('Закрити заявку без результату? Клієнт зможе подати нову.')">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="danger" type="submit">⛔️ Закрити адміністратором</button>
+    <span class="muted">— для покинутих заявок. Результат «Зацікавлений/Відмова» не записується.</span>
+  </form>
+{% elif req.status == 'COMPLETED' %}
+  <form method="post" action="/admin/consultations/{{ req.id }}/result" class="row-actions">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <span>Виправити результат:</span>
+    {% for code, label in result_labels.items() %}
+      <button class="{{ 'secondary' if req.result == code else '' }} small" name="result" value="{{ code }}" {{ 'disabled' if req.result == code }}>{{ label }}</button>
+    {% endfor %}
+  </form>
+{% endif %}
+</div>
+<h2>Історія</h2>
+<div class="card"><ul class="timeline">
+{% for e, actor in history %}
+  <li><time>{{ fmt_dt(e.created_at) }}</time><span>{{ event_labels.get(e.event_type, e.event_type) }}
+    {% if actor %}<span class="muted">· {{ actor.name }}</span>{% endif %}
+    {% if e.event_data.get('previous') %}<span class="muted">· {{ result_labels.get(e.event_data['previous']) }} → {{ result_labels.get(e.event_data['new']) }}</span>
+    {% elif e.event_data.get('result') %}<span class="muted">· {{ result_labels.get(e.event_data['result']) }}</span>{% endif %}
+  </span></li>
+{% endfor %}
+</ul></div>
+{% endblock %}

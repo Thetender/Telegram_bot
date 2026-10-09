@@ -13,7 +13,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.methods import EditMessageText, SendMessage, TelegramMethod
+from aiogram.methods import EditMessageText, GetMe, SendMessage, TelegramMethod
 from aiogram.types import CallbackQuery, Chat, Contact, Message, Update
 from aiogram.types import User as TgUser
 
@@ -35,6 +35,8 @@ class FakeSession(BaseSession):
                 method=method, message="Forbidden: bot was blocked by the user"
             )
         self.requests.append(method)
+        if isinstance(method, GetMe):
+            return TgUser(id=BOT_ID, is_bot=True, first_name="Test bot", username="TgtestTT_bot")
         if isinstance(method, (SendMessage, EditMessageText)):
             chat_id = method.chat_id if method.chat_id is not None else 0
             return Message(

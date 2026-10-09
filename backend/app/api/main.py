@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
+from app.admin import mount_admin
 from app.bot.factory import configure_bot, create_bot, create_dispatcher
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
@@ -43,6 +44,7 @@ def create_app(
         settings.validate_runtime()
         engine = make_engine(settings.database_url)
         session_factory = make_session_factory(engine)
+        app.state.settings = settings
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.bot = bot or create_bot(settings)
@@ -65,7 +67,11 @@ def create_app(
             await app.state.tender.aclose()
             await engine.dispose()
 
-    app = FastAPI(title="The Tender Telegram service", lifespan=lifespan, docs_url=None)
+    app = FastAPI(
+        title="The Tender Telegram service", lifespan=lifespan, docs_url=None, redoc_url=None,
+        openapi_url=None,
+    )
+    mount_admin(app)
 
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:

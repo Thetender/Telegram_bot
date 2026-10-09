@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -8,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import LegalDocument, LegalDocumentVersion, UserLegalAcceptance
+from app.services import events
 
 TERMS = "TERMS"
 PRIVACY = "PRIVACY"
@@ -58,6 +60,9 @@ async def publish_version(
     stored_reference: str,
     effective_at: datetime,
     require_reacceptance: bool = False,
+    file_name: str | None = None,
+    file_content: bytes | None = None,
+    created_by: int | None = None,
 ) -> LegalDocumentVersion:
     """Create a new immutable ACTIVE version and archive the previous one."""
     doc = await session.scalar(select(LegalDocument).where(LegalDocument.doc_type == doc_type))
@@ -87,7 +92,17 @@ async def publish_version(
         effective_at=effective_at,
         require_reacceptance=require_reacceptance,
         status="ACTIVE",
+        file_name=file_name,
+        file_content=file_content,
+        file_sha256=hashlib.sha256(file_content).hexdigest() if file_content else None,
+        created_by=created_by,
     )
     session.add(v)
     await session.flush()
+    await events.log_event(
+        session,
+        events.LEGAL_VERSION_PUBLISHED,
+        actor_user_id=created_by,
+        data={"doc_type": doc_type, "version": version, "reaccept": require_reacceptance},
+    )
     return v

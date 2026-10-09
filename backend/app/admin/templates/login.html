@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Вхід{% endblock %}
+{% block content %}
+<div class="login">
+  <div class="card stack">
+    <h1>Вхід в адмінку</h1>
+    <p class="muted">Увійдіть через Telegram-акаунт, з яким ви зареєстровані в боті. Доступ мають лише адміністратори.</p>
+    {% if error == 'not_admin' %}<div class="flash warn">Цей акаунт не має прав адміністратора.</div>
+    {% elif error == 'not_registered' %}<div class="flash warn">Цей Telegram-акаунт не зареєстрований у боті. Спершу відкрийте бота і поділіться телефоном.</div>
+    {% elif error == 'signature' %}<div class="flash warn">Не вдалося підтвердити вхід. Спробуйте ще раз.</div>{% endif %}
+    {% if bot_username %}
+      <script async src="https://telegram.org/js/telegram-widget.js?22"
+        data-telegram-login="{{ bot_username }}" data-size="large" data-radius="8"
+        data-auth-url="{{ auth_url }}" data-request-access="write"></script>
+      <p class="muted" style="font-size:13px">Якщо кнопка не з'являється — у @BotFather для бота @{{ bot_username }} має бути вказаний домен цього сайту (Bot Settings → Domain).</p>
+    {% else %}
+      <div class="flash warn">Не вдалося зв'язатися з Telegram. Оновіть сторінку трохи пізніше.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

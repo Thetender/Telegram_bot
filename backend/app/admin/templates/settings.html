@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Налаштування{% endblock %}
+{% macro staff_table(rows, role_path, removable_label, notif_label, is_admin) %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Ім'я</th><th>Контакти</th><th>{{ notif_label }}</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/admin/users/{{ r.user.id }}">{{ r.user.name or '—' }}</a>{% if r.user.id == admin.id %} <span class="muted">(ви)</span>{% endif %}</td>
+      <td>{{ r.user.phone or '—' }}{% if r.user.username %} · @{{ r.user.username }}{% endif %}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/settings/{{ role_path }}/{{ r.user.id }}/notifications">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="enabled" value="{{ '0' if r.notifications_enabled else '1' }}">
+          <span class="state {{ 'on' if r.notifications_enabled else 'off' }}">{{ '✅ Увімкнено' if r.notifications_enabled else '⏸ Вимкнено' }}</span>
+          <button class="secondary small" type="submit">{{ 'Вимкнути' if r.notifications_enabled else 'Увімкнути' }}</button>
+        </form>
+      </td>
+      <td>
+        {% if not (is_admin and rows|length <= 1) %}
+        <form class="inline" method="post" action="/admin/settings/{{ role_path }}/{{ r.user.id }}/remove" onsubmit="return confirm('{{ removable_label }}?')">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="danger small" type="submit">{{ removable_label }}</button>
+        </form>
+        {% else %}<span class="muted" title="Останнього адміністратора прибрати не можна">останній адмін</span>{% endif %}
+      </td>
+    </tr>
+  {% else %}<tr><td colspan="4" class="muted">Поки нікого.</td></tr>{% endfor %}
+  </tbody></table></div>
+{% endmacro %}
+{% block content %}
+<h1>⚙️ Налаштування</h1>
+
+<div class="section" id="admins">
+  <h2>Адміністратори</h2>
+  {{ staff_table(admins, 'admins', 'Прибрати', 'Системні повідомлення в Telegram', True) }}
+  {% if invitations %}
+  <p class="muted" style="margin-top:12px">Очікують підтвердження в боті:</p>
+  <ul>{% for inv, u in invitations %}
+    <li>{{ u.name or '—' }} {% if u.username %}@{{ u.username }}{% endif %} · {{ fmt_dt(inv.created_at) }}
+      <form class="inline" method="post" action="/admin/settings/invitations/{{ inv.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary small">Скасувати</button></form></li>
+  {% endfor %}</ul>
+  {% endif %}
+  <form class="filters" method="get" action="/admin/settings#admins" style="margin-top:12px">
+    <label>+ Додати адміністратора<input type="search" name="find_admin" value="{{ find_admin }}" placeholder="@username або телефон користувача бота"></label>
+    <button type="submit" class="secondary">Знайти</button>
+  </form>
+  {% if admin_found is not none %}
+    {% if admin_found %}<div class="table-wrap"><table><tbody>{% for u in admin_found %}
+      <tr><td>{{ u.name or '—' }}</td><td>{{ u.phone }}{% if u.username %} · @{{ u.username }}{% endif %}</td><td>
+        {% if u.id in admin_ids %}<span class="muted">вже адміністратор</span>{% else %}
+        <form class="inline" method="post" action="/admin/settings/admins/invite"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="small">Надіслати запрошення</button></form>{% endif %}
+      </td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="flash info">Користувача не знайдено. Попросіть його спершу відкрити бота і зареєструватися (поділитися телефоном), потім спробуйте ще раз.</div>{% endif %}
+  {% endif %}
+</div>
+
+<div class="section" id="managers">
+  <h2>Менеджери</h2>
+  {{ staff_table(managers, 'managers', 'Зняти роль', 'Сповіщення про консультації', False) }}
+  <form class="filters" method="get" action="/admin/settings#managers" style="margin-top:12px">
+    <label>+ Додати менеджера<input type="search" name="find_manager" value="{{ find_manager }}" placeholder="@username або телефон користувача бота"></label>
+    <button type="submit" class="secondary">Знайти</button>
+  </form>
+  {% if manager_found is not none %}
+    {% if manager_found %}<div class="table-wrap"><table><tbody>{% for u in manager_found %}
+      <tr><td>{{ u.name or '—' }}</td><td>{{ u.phone }}{% if u.username %} · @{{ u.username }}{% endif %}</td><td>
+        {% if u.id in manager_ids %}<span class="muted">вже менеджер</span>{% else %}
+        <form class="inline" method="post" action="/admin/settings/managers/add"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="small">Призначити менеджером</button></form>{% endif %}
+      </td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="flash info">Користувача не знайдено. Він має спершу зареєструватися в боті.</div>{% endif %}
+  {% endif %}
+</div>
+
+<div class="section" id="legal">
+  <h2>Юридичні документи</h2>
+  <p class="muted">Кожна версія незмінна. Зміна лише посилання не створює нової версії. Нова версія автоматично стає активною, попередня — архівною.</p>
+  <div class="grid2">
+  {% for doc_type, title in [('TERMS', 'Умови використання'), ('PRIVACY', 'Політика конфіденційності')] %}
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">{{ title }}</div>
+      {% for v in legal_versions.get(doc_type, []) %}
+        <div style="padding:8px 0;border-bottom:1px dashed #e4e7ec">
+          <div><b>v{{ v.version }}</b> <span class="badge {{ 'COMPLETED' if v.status == 'ACTIVE' else 'CLOSED_BY_ADMIN' }}">{{ 'Активна' if v.status == 'ACTIVE' else 'Архів' }}</span>
+            <span class="muted">діє з {{ fmt_dt(v.effective_at, False) }}</span>
+            {% if v.require_reacceptance %}<span class="badge NEW">потребує повторного підтвердження</span>{% endif %}
+            {% if v.file_name %}· <a href="/admin/settings/legal/{{ v.id }}/file">📎 {{ v.file_name }}</a>{% endif %}</div>
+          <form class="filters" method="post" action="/admin/settings/legal/{{ v.id }}/url" style="margin:6px 0 0">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="url" name="public_url" value="{{ v.public_url }}" style="flex:1;min-width:200px" required>
+            <button class="secondary small" type="submit">Змінити посилання</button>
+          </form>
+        </div>
+      {% else %}<p class="muted">Ще не опубліковано — бот не показує посилання.</p>{% endfor %}
+      <details style="margin-top:12px"><summary><b>Опублікувати нову версію</b></summary>
+        <form method="post" action="/admin/settings/legal/publish" enctype="multipart/form-data" class="stack" style="margin-top:10px">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="doc_type" value="{{ doc_type }}">
+          <div class="filters">
+            <label>Версія<input type="text" name="version" placeholder="1.0" required maxlength="32"></label>
+            <label>Діє з<input type="date" name="effective_date" value="{{ today }}"></label>
+          </div>
+          <label class="filters" style="display:block">Публічне посилання<br><input type="url" name="public_url" placeholder="https://thetender.com.ua/..." required style="width:100%"></label>
+          <label>Копія документа (PDF/DOCX, необов'язково, до 10 МБ)<br><input type="file" name="file"></label>
+          <label><input type="checkbox" name="reaccept" value="1"> Потребує повторного підтвердження користувачами <span class="muted">(запрацює в Iteration 6)</span></label>
+          <button type="submit">Опублікувати</button>
+        </form>
+      </details>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+
+<div class="section" id="privacy">
+  <h2>Запити на видалення персональних даних</h2>
+  <p class="muted">Обробка (видалення моніторингів через API і знеособлення даних) з'явиться в Iteration 6.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Користувач</th><th>Створено</th><th>Статус</th></tr></thead>
+    <tbody>{% for r, u in privacy %}
+      <tr><td><a href="/admin/users/{{ u.id }}">{{ u.name or '—' }}</a></td><td>{{ fmt_dt(r.created_at) }}</td>
+        <td><span class="badge {{ 'NEW' if r.status == 'NEW' else ('IN_PROGRESS' if r.status == 'IN_PROGRESS' else 'COMPLETED') }}">{{ {'NEW':'Новий','IN_PROGRESS':'В роботі','COMPLETED':'Виконано'}[r.status] }}</span></td></tr>
+    {% else %}<tr><td colspan="3" class="muted">Запитів немає.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Консультації{% endblock %}
+{% block content %}
+<h1>💬 Консультації</h1>
+<div class="tabs">
+  {% for key, label in [('all','Усі'),('new','Нові'),('progress','В роботі'),('done','Завершені')] %}
+  <a href="?tab={{ key }}" class="{{ 'active' if tab == key }}">{{ label }}<span class="count">{{ counts[key] }}</span></a>
+  {% endfor %}
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>№</th><th>Користувач</th><th>Телефон</th><th>Створено</th><th>Статус</th><th>Менеджер</th><th>Результат</th></tr></thead>
+  <tbody>
+  {% for r, m in rows %}
+    <tr>
+      <td><a href="/admin/consultations/{{ r.id }}">№{{ r.id }}</a></td>
+      <td><a href="/admin/users/{{ r.user_id }}">{{ r.contact_name or '—' }}</a></td>
+      <td>{{ r.contact_phone or '—' }}</td>
+      <td>{{ fmt_dt(r.created_at) }}</td>
+      <td><span class="badge {{ r.status }}">{{ status_labels[r.status] }}</span></td>
+      <td>{{ m.name if m else '—' }}</td>
+      <td>{{ result_labels.get(r.result, '—') }}</td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="muted">Заявок немає.</td></tr>{% endfor %}
+  </tbody></table></div>
+{% if pages > 1 %}<div class="pager">
+  {% if page > 1 %}<a class="btn secondary" href="?tab={{ tab }}&page={{ page-1 }}">← Назад</a>{% endif %}
+  <span class="muted">Сторінка {{ page }} з {{ pages }}</span>
+  {% if page < pages %}<a class="btn secondary" href="?tab={{ tab }}&page={{ page+1 }}">Далі →</a>{% endif %}
+</div>{% endif %}
+{% endblock %}

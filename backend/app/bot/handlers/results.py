@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
@@ -16,6 +17,7 @@ from app.bot import texts as t
 from app.bot.handlers.search import SCb, edit_or_send, render_screen, send_screen
 from app.config import Settings
 from app.integrations.thetender import Auction, TenderClient, TenderError
+from app.integrations.thetender.client import DEFAULT_PAGESIZE
 from app.models import SearchSnapshot, User
 from app.services import events
 from app.services import search as search_svc
@@ -24,7 +26,14 @@ from app.services.search_params import format_number, normalize, to_api
 
 log = logging.getLogger(__name__)
 
-MESSAGE_BUDGET = 3800  # Telegram limit is 4096 characters
+# Telegram limit is 4096 characters of *visible* text (HTML tags and link
+# addresses do not count), keep a small margin.
+MESSAGE_BUDGET = 4000
+_TAG = re.compile(r"<[^>]+>")
+
+
+def visible_len(text: str) -> int:
+    return len(html.unescape(_TAG.sub("", text)))
 
 
 class RCb(CallbackData, prefix="r"):
@@ -33,10 +42,10 @@ class RCb(CallbackData, prefix="r"):
     p: int = 0
 
 
-def format_auction(auction: Auction, link: str) -> str:
+def format_auction(auction: Auction, link: str, position: int) -> str:
     price = f"{format_number(auction.price)} грн" if auction.price not in (None, "") else "—"
     return (
-        f"<b>{html.escape(auction.name)}</b>\n"
+        f"<b>{position}. {html.escape(auction.name)}</b>\n"
         f"{t.RESULT_PRICE.format(price=price)}\n"
         f'<a href="{html.escape(link, quote=True)}">{t.RESULT_LINK}</a>'
     )
@@ -47,7 +56,7 @@ def split_messages(header: str, blocks: list[str]) -> list[str]:
     current = header
     for block in blocks:
         candidate = f"{current}\n\n{block}" if current else block
-        if len(candidate) > MESSAGE_BUDGET and current:
+        if visible_len(candidate) > MESSAGE_BUDGET and current:
             messages.append(current)
             current = block
         else:
@@ -145,8 +154,9 @@ async def send_results_page(
         header_parts.append(t.DEMO_BANNER)
     if page == 1:
         header_parts.append(t.RESULTS_FOUND.format(count=result.items_count))
-    if result.pages_count > 1:
-        header_parts.append(t.RESULTS_PAGE.format(page=page, pages=result.pages_count))
+    # Continuous numbering across "Показати ще" pages: 1..N.
+    offset = (page - 1) * DEFAULT_PAGESIZE
+    shown = [a for a in result.items if a.url]
     blocks = [
         format_auction(
             a,
@@ -158,9 +168,9 @@ async def send_results_page(
                 "SEARCH",
                 a.number,
             ),
+            offset + i + 1,
         )
-        for a in result.items
-        if a.url
+        for i, a in enumerate(shown)
     ]
     messages = split_messages("\n".join(header_parts), blocks)
     next_page = page + 1 if result.has_more else None

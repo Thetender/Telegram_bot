@@ -50,6 +50,7 @@ TEXT_PROMPTS = {
     "customer_name": t.PROMPT_ORGANIZER,
 }
 SINGLE_CHOICE = {"auction_type": AUCTION_TYPES, "start_price_type": PRICE_TYPES}
+CLEARABLE = {"auction_type", "start_price_type", "category", "regions"}
 
 
 class SCb(CallbackData, prefix="s"):
@@ -111,17 +112,21 @@ def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def back_row() -> list[InlineKeyboardButton]:
-    return [_btn(t.BTN_BACK_TO_PARAMS, "open")]
+def back_row(clear_target: str | None = None) -> list[InlineKeyboardButton]:
+    """Bottom row of every parameter screen: [🗑 Очистити] (only when the
+    parameter is set) on the left, [◀️ До параметрів] on the right."""
+    row = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)] if clear_target else []
+    row.append(_btn(t.BTN_BACK_TO_PARAMS, "open"))
+    return row
 
 
 def input_keyboard(skip: bool = False, clear_target: str | None = None) -> InlineKeyboardMarkup:
     rows = []
     if skip:
         rows.append([_btn(t.BTN_SKIP, "skip")])
-    if clear_target:
-        rows.append([_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)])
-    rows.append([_btn(t.BTN_CANCEL, "cancel")])
+    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)] if clear_target else []
+    bottom.append(_btn(t.BTN_CANCEL, "cancel"))
+    rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -137,7 +142,9 @@ def regions_keyboard(selected: list[str]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([_btn(t.BTN_DONE, "open"), _btn(t.BTN_CLEAR_FIELD, "fclr", "regions")])
+    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", "regions")] if chosen else []
+    bottom.append(_btn(t.BTN_DONE, "open"))
+    rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -155,8 +162,7 @@ def categories_keyboard(names: list[str], page: int, current: str | None) -> Inl
         nav.append(_btn("➡️", "cat", str(page + 1)))
     if nav:
         rows.append(nav)
-    rows.append([_btn(t.BTN_ANY, "catset", "")])
-    rows.append(back_row())
+    rows.append(back_row("category" if current else None))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -234,8 +240,7 @@ def create_router() -> Router:
             [_btn(f"✅ {label}" if code == current else label, "set", f"{field}={code}")]
             for code, label in SINGLE_CHOICE[field].items()
         ]
-        rows.append([_btn(t.BTN_ANY, "set", f"{field}=")])
-        rows.append(back_row())
+        rows.append(back_row(field if current else None))
         await edit_or_send(callback, title, InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
 
@@ -371,7 +376,7 @@ def create_router() -> Router:
     ) -> None:
         target = callback_data.v
         await state.clear()
-        if target in TEXT_PROMPTS or target == "regions":
+        if target in TEXT_PROMPTS or target in CLEARABLE:
             changes = {target: None}
         elif target == "price":
             changes = {"min_price": None, "max_price": None}
@@ -407,9 +412,7 @@ def create_router() -> Router:
             [_btn(f"{label}", "unit", code)]
             for code, label in (("ha.", "Гектари (га)"), ("sq.m.", "Квадратні метри (м²)"))
         ]
-        if "area_unit" in p:
-            rows.append([_btn(t.BTN_CLEAR_FIELD, "fclr", "area")])
-        rows.append(back_row())
+        rows.append(back_row("area" if "area_unit" in p else None))
         await edit_or_send(callback, t.CHOOSE_AREA_UNIT, InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
 

@@ -33,7 +33,11 @@ def main_menu(roles: set[str]) -> ReplyKeyboardMarkup:
     ]
     if ROLE_MANAGER in roles:
         rows[-1].append(KeyboardButton(text=t.BTN_MY_REQUESTS))
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, is_persistent=True)
+    # one_time_keyboard: the menu folds away after a tap and frees the screen;
+    # the user reopens it with the keyboard icon next to the input field.
+    return ReplyKeyboardMarkup(
+        keyboard=rows, resize_keyboard=True, is_persistent=False, one_time_keyboard=True
+    )
 
 
 def share_phone() -> ReplyKeyboardMarkup:
@@ -50,9 +54,7 @@ def legal_links(versions: dict[str, ActiveLegalVersion]) -> InlineKeyboardMarkup
     if TERMS in versions:
         buttons.append([InlineKeyboardButton(text=t.BTN_TERMS, url=versions[TERMS].public_url)])
     if PRIVACY in versions:
-        buttons.append(
-            [InlineKeyboardButton(text=t.BTN_PRIVACY, url=versions[PRIVACY].public_url)]
-        )
+        buttons.append([InlineKeyboardButton(text=t.BTN_PRIVACY, url=versions[PRIVACY].public_url)])
     return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
 
 

@@ -11,10 +11,12 @@
 - порти лише на `127.0.0.1`: test — **8083**, prod — **8082**; назовні — тільки через nginx;
 - деплой змінює тільки `/opt/thetender-telegram`.
 
-## Уже зроблено
+## Уже зроблено (test запущено 09.10.2026)
 - [x] Docker (rootless) встановлено
 - [x] Користувач `tgdeploy`, каталог `/opt/thetender-telegram`
 - [x] Зв'язок з api.telegram.org: IPv4 працює (302), IPv6 немає — бот працює через IPv4
+- [x] Делегування контролера cpu (крок 2) — уже було налаштовано
+- [x] nginx, сертифікат tg-test, перший запуск, нічний бекап test
 
 ---
 
@@ -122,8 +124,14 @@ docker compose -p tg-test exec app python -m app.cli grant-admin --phone +380XXX
 
 ```bash
 sudo -iu tgdeploy crontab -e
+XDG_RUNTIME_DIR=/run/user/<uid tgdeploy>
+DOCKER_HOST=unix:///run/user/<uid tgdeploy>/docker.sock
 15 3 * * * /opt/thetender-telegram/test/scripts/backup_db.sh test >> /opt/thetender-telegram/backup.log 2>&1
 ```
+
+cron не читає `.bashrc`, тому для rootless Docker змінні `XDG_RUNTIME_DIR` і `DOCKER_HOST`
+задаються в crontab явно. Якщо бекап запускається з фіксованої копії скрипта на сервері,
+зміни `scripts/backup_db.sh` у репозиторії треба переносити вручну (ми попереджатимемо).
 
 Дампи — у `/opt/thetender-telegram/backups/<env>` (14 днів).
 

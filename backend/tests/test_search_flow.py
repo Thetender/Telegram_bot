@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy import func, select
 
 from app.bot import texts as t
-from app.bot.handlers.results import RCb
+from app.bot.handlers.results import RCb, visible_len
 from app.bot.handlers.search import SCb, category_key
 from app.models import Event, SearchDraft, SearchSnapshot, User
 from app.services.search_params import REGIONS
@@ -181,8 +181,10 @@ async def test_search_results_pagination_and_links(harness):
     texts = h.tg.texts()
     assert "Знайдено аукціонів: <b>60</b>" in texts[0]
     assert len(texts) >= 2  # 50 items split across several Telegram messages
-    assert all(len(x) <= 4096 for x in texts)
+    assert all(visible_len(x) <= 4096 for x in texts)
     assert sum(x.count(t.RESULT_LINK) for x in texts) == 50
+    assert "Сторінка" not in texts[0]  # no page counter, numbering instead
+    assert "<b>1. " in texts[0] and "<b>50. " in texts[-1]
     assert "https://tg-test.example.com/r/" in texts[0]  # tracked links
     # Keyboard only under the last message, with "Показати ще".
     sent = h.tg.sent()
@@ -193,6 +195,7 @@ async def test_search_results_pagination_and_links(harness):
     h.tg.clear()
     await h.feed(callback_update(UID, more))
     assert sum(x.count(t.RESULT_LINK) for x in h.tg.texts()) == 10
+    assert "<b>51. " in h.tg.texts()[0] and "<b>60. " in h.tg.texts()[-1]
     final = [m for m in h.tg.sent() if m.reply_markup][-1]
     assert t.BTN_MORE not in [text for text, _ in buttons(final.reply_markup)]  # last page
     assert any(isinstance(r, EditMessageReplyMarkup) for r in h.tg.requests)  # old "More" removed
@@ -202,6 +205,29 @@ async def test_search_results_pagination_and_links(harness):
     await h.feed(callback_update(UID, more))
     assert h.tg.texts() == []
     assert answers(h)[-1].text == t.PAGE_ALREADY_SHOWN
+
+
+async def test_clear_button_only_when_parameter_is_set(harness):
+    h = harness
+    await register(h)
+    for action, value, field in (
+        ("deal", "", "auction_type=sale"),
+        ("type", "", "start_price_type=eng"),
+    ):
+        await tap(h, action, value)
+        labels = [text for text, _ in buttons(last_markup(h))]
+        assert t.BTN_CLEAR_FIELD not in labels and "Не важливо" not in labels
+        await tap(h, "set", field)
+        await tap(h, action, value)
+        row = last_markup(h).inline_keyboard[-1]
+        assert [b.text for b in row] == [t.BTN_CLEAR_FIELD, t.BTN_BACK_TO_PARAMS]  # clear left
+        await tap(h, "fclr", field.split("=")[0])
+    assert await draft(h) == {}
+
+    await tap(h, "reg")
+    assert [b.text for b in last_markup(h).inline_keyboard[-1]] == [t.BTN_DONE]
+    await tap(h, "regt", "0")
+    assert [b.text for b in last_markup(h).inline_keyboard[-1]] == [t.BTN_CLEAR_FIELD, t.BTN_DONE]
 
 
 async def test_zero_results(harness):

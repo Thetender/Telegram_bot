@@ -123,7 +123,6 @@ BTN_P_AREA = "Площа"
 BTN_RUN_SEARCH = "🔍 Пошук"
 BTN_CLEAR_PARAMS = "🗑 Очистити параметри"
 BTN_MAIN_MENU = "◀️ Головне меню"
-BTN_ANY = "Не важливо"
 BTN_DONE = "✅ Готово"
 BTN_CANCEL = "✖️ Скасувати"
 BTN_SKIP = "⏭ Пропустити"
@@ -158,7 +157,6 @@ CATEGORIES_UNAVAILABLE = "⚠️ Не вдалося завантажити ка
 
 # --- Search results ---
 RESULTS_FOUND = "Знайдено аукціонів: <b>{count}</b>"
-RESULTS_PAGE = "Сторінка {page} з {pages}"
 ZERO_RESULTS = (
     "😕 За заданими параметрами зараз немає активних аукціонів.\n\n"
     "Увімкніть моніторинг і отримайте повідомлення одразу, як відповідний аукціон "

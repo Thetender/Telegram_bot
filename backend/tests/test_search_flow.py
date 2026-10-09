@@ -46,17 +46,22 @@ def last_markup(h) -> InlineKeyboardMarkup:
     return h.tg.sent()[-1].reply_markup
 
 
+def labels(h) -> list[str]:
+    return [b.text for row in last_markup(h).inline_keyboard for b in row]
+
+
 async def test_open_search_screen_and_resume_draft(harness):
     h = harness
     await register(h)
     await say(h, t.BTN_SEARCH)
     assert t.SEARCH_NO_PARAMS in h.tg.texts()[-1]
     await tap(h, "set", "auction_type=rent")
-    assert "Продаж / Оренда: Оренда" in h.tg.texts()[-1]
+    assert "✏️ Продаж / Оренда: Оренда" in labels(h)
+    assert labels(h).index("✏️ Продаж / Оренда: Оренда") == 0  # chosen ones on top
     # Leave and come back: draft is resumed.
     await say(h, t.BTN_HELP)
     await say(h, t.BTN_SEARCH)
-    assert "Продаж / Оренда: Оренда" in h.tg.texts()[-1]
+    assert "✏️ Продаж / Оренда: Оренда" in labels(h)
     async with h.sf() as s:
         assert (
             await s.scalar(
@@ -106,7 +111,7 @@ async def test_text_inputs_and_menu_override(harness):
     await tap(h, "txt", "city")
     await say(h, "Біла Церква")
     assert (await draft(h))["city"] == "Біла Церква"
-    assert "Місто: Біла Церква" in h.tg.texts()[-1]
+    assert "✏️ Місто: Біла Церква" in labels(h)
 
     # A menu button while waiting for keywords cancels input; it is never stored.
     await tap(h, "txt", "keywords")

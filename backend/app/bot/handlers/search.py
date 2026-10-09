@@ -75,40 +75,52 @@ def category_key(name: str) -> str:
 # ---------- rendering ----------
 
 
+BUTTON_VALUE_LEN = 28
+
+# (summary label, button text, callback action, callback value)
+PARAM_BUTTONS = (
+    ("Продаж / Оренда", t.BTN_P_DEAL, "deal", ""),
+    ("Тип аукціону", t.BTN_P_TYPE, "type", ""),
+    ("Категорія", t.BTN_P_CATEGORY, "cat", "0"),
+    ("Регіон", t.BTN_P_REGION, "reg", ""),
+    ("Місто", t.BTN_P_CITY, "txt", "city"),
+    ("Ключові слова", t.BTN_P_KEYWORDS, "txt", "keywords"),
+    ("Організатор", t.BTN_P_ORGANIZER, "txt", "customer_name"),
+    ("Ціна", t.BTN_P_PRICE, "price", ""),
+    ("Площа", t.BTN_P_AREA, "area", ""),
+)
+
+
+def _short(value: str) -> str:
+    return value if len(value) <= BUTTON_VALUE_LEN else value[: BUTTON_VALUE_LEN - 1] + "…"
+
+
 def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Chosen parameters come first, one per row with their value on the
+    button (tap = edit); parameters not chosen yet follow two per row."""
     p = normalize(params)
-    lines = [t.SEARCH_TITLE, "", t.SEARCH_HINT, ""]
-    summary = summary_lines(p)
-    if summary:
-        lines.append("<b>Обрані параметри:</b>")
-        lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    values = dict(summary_lines(p))
+    chosen_rows: list[list[InlineKeyboardButton]] = []
+    free: list[InlineKeyboardButton] = []
+    for label, button, action, value in PARAM_BUTTONS:
+        if label in values:
+            text = f"✏️ {button}: {_short(values[label])}"
+            chosen_rows.append([_btn(text, action, value)])
+        else:
+            free.append(_btn(button, action, value))
+
+    lines = [t.SEARCH_TITLE, ""]
+    if chosen_rows:
+        lines.append(t.SEARCH_HINT_CHOSEN)
     else:
-        lines.append(t.SEARCH_NO_PARAMS)
+        lines += [t.SEARCH_HINT, "", t.SEARCH_NO_PARAMS]
 
-    def mark(label: str, is_set: bool) -> str:
-        return f"✅ {label}" if is_set else label
-
-    rows = [
-        [
-            _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal"),
-            _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type"),
-        ],
-        [
-            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0"),
-            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg"),
-        ],
-        [
-            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city"),
-            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords"),
-        ],
-        [
-            _btn(mark(t.BTN_P_ORGANIZER, "customer_name" in p), "txt", "customer_name"),
-            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price"),
-        ],
-        [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area")],
-        [_btn(t.BTN_RUN_SEARCH, "run")],
-        [_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")],
-    ]
+    rows = list(chosen_rows)
+    if chosen_rows and free:
+        rows.append([_btn(t.SEARCH_ADD_MORE, "noop")])
+    rows += [free[i : i + 2] for i in range(0, len(free), 2)]
+    rows.append([_btn(t.BTN_RUN_SEARCH, "run")])
+    rows.append([_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -227,6 +239,10 @@ def create_router() -> Router:
         await callback.bot.send_message(
             callback.from_user.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles)
         )
+
+    @router.callback_query(SCb.filter(F.a == "noop"))
+    async def on_noop(callback: CallbackQuery) -> None:
+        await callback.answer()
 
     # --- single choice: deal type and auction type ---
     @router.callback_query(SCb.filter(F.a.in_({"deal", "type"})))

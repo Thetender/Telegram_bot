@@ -42,6 +42,9 @@ class Settings(BaseModel):
     # Demo mode: built-in fake auction data, for testing the bot UX before the
     # sandbox API key is configured. Never allowed in prod.
     thetender_mock: bool = False
+    # Explicit owner decision (09.10.2026): the test bot may read the production
+    # The Tender API while the bot is not public. Must be set consciously.
+    allow_production_api_in_test: bool = False
     # Secret for signing tracked auction links. Defaults to a key derived from
     # TELEGRAM_WEBHOOK_SECRET, so no extra setup is needed on the server.
     link_signing_secret: SecretStr | None = None
@@ -83,7 +86,11 @@ class Settings(BaseModel):
                 raise ValueError("TELEGRAM_WEBHOOK_SECRET is required in webhook mode")
         if self.environment == "prod" and self.thetender_mock:
             raise ValueError("THETENDER_MOCK must not be enabled in production")
-        if self.environment != "prod" and "thetender.com.ua" in self.thetender_base_url:
+        if (
+            self.environment != "prod"
+            and "thetender.com.ua" in self.thetender_base_url
+            and not self.allow_production_api_in_test
+        ):
             raise ValueError(
                 "Non-production environment must not use the production The Tender API"
             )
@@ -102,6 +109,7 @@ def load_settings() -> Settings:
         "thetender_base_url": _env("THETENDER_BASE_URL", "https://sandbox.mxuser.com"),
         "thetender_api_key": _env("THETENDER_API_KEY"),
         "thetender_mock": _env("THETENDER_MOCK", "false"),
+        "allow_production_api_in_test": _env("ALLOW_PRODUCTION_API_IN_TEST", "false"),
         "link_signing_secret": _env("LINK_SIGNING_SECRET"),
         "consultation_phone": _env("CONSULTATION_PHONE", "+38 067 333 78 00"),
         "timezone": _env("TIMEZONE", "Europe/Kyiv"),

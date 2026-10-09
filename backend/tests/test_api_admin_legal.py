@@ -83,6 +83,10 @@ def test_non_prod_cannot_use_production_api():
     settings = make_settings(thetender_base_url="https://thetender.com.ua")
     with pytest.raises(ValueError):
         settings.validate_runtime()
+    # ...unless explicitly allowed by the owner for the test bot.
+    make_settings(
+        thetender_base_url="https://thetender.com.ua", allow_production_api_in_test=True
+    ).validate_runtime()
 
 
 def test_webhook_mode_requires_secret():

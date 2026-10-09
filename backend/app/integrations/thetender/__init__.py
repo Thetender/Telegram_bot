@@ -20,6 +20,8 @@ def make_tender_client(settings: Settings) -> TenderClient:
     if settings.thetender_mock:
         log.warning("The Tender API: DEMO mode (generated data), THETENDER_MOCK=true")
         return MockTenderClient()
+    if settings.environment != "prod" and "thetender.com.ua" in settings.thetender_base_url:
+        log.warning("Test environment is using the PRODUCTION The Tender API (explicitly allowed)")
     key = settings.thetender_api_key.get_secret_value() if settings.thetender_api_key else ""
     if not key:
         log.warning("THETENDER_API_KEY is not set: search will report the API as unavailable")

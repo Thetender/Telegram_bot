@@ -72,7 +72,7 @@ TEST_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/tg_test pytest -q
 | Адреса | https://tg-test.thetender.com.ua | https://tg.thetender.com.ua |
 | The Tender API | https://sandbox.mxuser.com | https://thetender.com.ua |
 | Каталог на сервері | /opt/thetender-telegram/test | /opt/thetender-telegram/prod |
-| Порт (лише 127.0.0.1) | 8081 | 8082 |
+| Порт (лише 127.0.0.1) | 8083 | 8082 |
 | Деплой | автоматично після merge в `main` | вручну, з тегом релізу |
 
 Test-середовище технічно не може звернутися до production The Tender API

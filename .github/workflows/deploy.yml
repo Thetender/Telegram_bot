@@ -3,7 +3,11 @@ name: Deploy
 # Test environment: deployed automatically after CI succeeds on main.
 # Production: started manually (Actions → Deploy → Run workflow) with a release tag.
 # Disabled until the repository variable DEPLOY_ENABLED is set to "true" and
-# secrets DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS exist.
+# secrets DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS exist.
+#
+# The SSH key is bound on the server to ONE fixed deploy script (forced command in
+# authorized_keys). The workflow only sends "<env> <git-ref>"; the server script
+# reads it from $SSH_ORIGINAL_COMMAND, validates it and runs the deployment.
 
 on:
   workflow_run:
@@ -46,5 +50,5 @@ jobs:
           ENV_NAME: ${{ github.event.inputs.environment || 'test' }}
           REF: ${{ github.event.inputs.ref || 'origin/main' }}
         run: |
-          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "/opt/thetender-telegram/$ENV_NAME/scripts/deploy.sh $ENV_NAME $REF"
+          ssh -i ~/.ssh/id_deploy -p "${{ secrets.DEPLOY_PORT }}" \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "$ENV_NAME $REF"

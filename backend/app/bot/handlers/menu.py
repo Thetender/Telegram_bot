@@ -29,16 +29,6 @@ def create_router() -> Router:
         await state.clear()
         await message.answer(t.coming_soon("Мої моніторинги"), reply_markup=kb.main_menu(roles))
 
-    @router.message(F.text == t.BTN_CONSULTATION)
-    async def on_consultation(message: Message, state: FSMContext, roles: set[str]) -> None:
-        await state.clear()
-        await message.answer(t.coming_soon("Консультація"), reply_markup=kb.main_menu(roles))
-
-    @router.message(F.text == t.BTN_MY_REQUESTS, filters.is_manager)
-    async def on_my_requests(message: Message, state: FSMContext, roles: set[str]) -> None:
-        await state.clear()
-        await message.answer(t.coming_soon("Мої заявки"), reply_markup=kb.main_menu(roles))
-
     @router.message(F.text == t.BTN_HELP)
     async def on_help(message: Message, state: FSMContext, session: AsyncSession) -> None:
         await state.clear()

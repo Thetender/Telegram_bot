@@ -32,7 +32,6 @@ async def test_menu_buttons_show_placeholders(harness):
     await register(harness)
     for button, section in [
         (t.BTN_MONITORINGS, "Мої моніторинги"),
-        (t.BTN_CONSULTATION, "Консультація"),
     ]:
         harness.tg.clear()
         await harness.feed(message_update(UID, button))
@@ -64,7 +63,7 @@ async def test_my_requests_only_for_managers(harness, db):
     assert t.BTN_MY_REQUESTS in labels
     harness.tg.clear()
     await harness.feed(message_update(UID, t.BTN_MY_REQUESTS))
-    assert harness.tg.texts() == [t.coming_soon("Мої заявки")]
+    assert harness.tg.texts()[-1].startswith(t.MY_REQUESTS_TITLE)
 
 
 async def test_help_sections(harness):

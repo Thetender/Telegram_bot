@@ -185,3 +185,51 @@ CONFIRM_NEW_SEARCH = "У вас є незавершені параметри п�
 BTN_YES_REPLACE = "Так, замінити"
 BTN_YES_NEW = "Так, новий пошук"
 BTN_KEEP_CURRENT = "Ні, залишити поточні"
+
+# --- Consultations (Iteration 3) ---
+CONSULT_TITLE = "💬 <b>Консультація</b>"
+CONSULT_INTRO = (
+    "Наш менеджер зателефонує вам за номером <b>{phone}</b> і допоможе з участю "
+    "в аукціонах.\n\nНатисніть кнопку нижче, щоб залишити заявку."
+)
+BTN_ORDER_CONSULTATION = "📞 Замовити консультацію"
+CONSULT_WORKDAY = (
+    "Заявку передано ✅\n\nНаш менеджер зв'яжеться з вами найближчим часом.\n\n"
+    "📞 {company_phone}"
+)
+CONSULT_WEEKEND = (
+    "Заявку передано ✅\n\nПоки тривають вихідні, наші менеджери змагаються за право першими "
+    "вам зателефонувати 😄 Переможець зв'яжеться з вами в перший робочий день.\n\n"
+    "📞 {company_phone}"
+)
+CONSULT_ALREADY = (
+    "Ваша заявка на консультацію вже прийнята ✅\n\n"
+    "Менеджер зв'яжеться з вами найближчим часом.\n\n📞 {company_phone}"
+)
+
+# Manager side
+REQ_CARD = (
+    "📋 <b>Заявка на консультацію №{id}</b>\n\n"
+    "👤 {name}\n📞 {phone}\n💬 {username}\n🕒 {created}"
+)
+REQ_NEW_HEADER = "🆕 <b>Нова заявка!</b>"
+BTN_CLAIM = "✅ Опрацювати"
+BTN_INTERESTED = "👍 Зацікавлений"
+BTN_DECLINED = "👎 Відмова"
+REQ_IN_PROGRESS_MINE = "🟡 <b>В роботі у вас.</b> Після розмови оберіть результат:"
+REQ_CLAIMED_BY = "✅ Взяв в роботу: <b>{manager}</b>"
+REQ_CLAIMED_ALERT = "Заявку вже взяв в роботу {manager}"
+REQ_COMPLETED = "✅ <b>Завершено:</b> {result}"
+REQ_CLOSED_BY_ADMIN = "⛔️ <b>Закрито адміністратором</b>"
+REQ_NOT_YOURS = "Ця заявка вже не у вас в роботі."
+RESULT_LABELS = {"INTERESTED": "👍 Зацікавлений", "DECLINED": "👎 Відмова"}
+ADMIN_FALLBACK_HEADER = (
+    "⚠️ <b>Немає менеджерів, яким вдалося надіслати заявку.</b>\n"
+    "Опрацюйте її, будь ласка, або призначте менеджера."
+)
+
+MY_REQUESTS_TITLE = "📋 <b>Мої заявки</b>"
+BTN_ACTIVE = "🟡 В роботі"
+BTN_DONE = "✅ Завершені"
+MY_REQUESTS_EMPTY_ACTIVE = "Зараз у вас немає заявок в роботі."
+MY_REQUESTS_EMPTY_DONE = "Завершених заявок ще немає."

@@ -4,6 +4,7 @@
     python -m app.cli grant-admin --telegram-id 123456789
     python -m app.cli publish-legal --type TERMS --version 1.0 \\
         --url https://thetender.com.ua/terms --stored-ref terms-v1.0.pdf
+    python -m app.cli grant-manager --phone +380671234567
     python -m app.cli list-admins
 """
 
@@ -18,13 +19,13 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import make_engine, make_session_factory
-from app.models import ROLE_ADMIN, User, UserRole
+from app.models import ROLE_ADMIN, ROLE_MANAGER, User, UserRole
 from app.services import legal
 from app.services import users as users_svc
 from app.services.phone import normalize_phone
 
 
-async def grant_admin(telegram_id: int | None, phone: str | None) -> int:
+async def grant_admin(telegram_id: int | None, phone: str | None, role: str = ROLE_ADMIN) -> int:
     settings = get_settings()
     engine = make_engine(settings.database_url)
     sf = make_session_factory(engine)
@@ -45,9 +46,9 @@ async def grant_admin(telegram_id: int | None, phone: str | None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            granted = await users_svc.grant_role(session, user, ROLE_ADMIN, actor_user_id=None)
+            granted = await users_svc.grant_role(session, user, role, actor_user_id=None)
             await session.commit()
-            print("ADMIN role granted." if granted else "User is already ADMIN.")
+            print(f"{role} role granted." if granted else f"User is already {role}.")
             return 0
     finally:
         await engine.dispose()
@@ -111,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
     who.add_argument("--telegram-id", type=int)
     who.add_argument("--phone", help="Phone the user registered with, e.g. +380671234567")
 
+    p = sub.add_parser("grant-manager", help="Grant MANAGER to a registered bot user")
+    who = p.add_mutually_exclusive_group(required=True)
+    who.add_argument("--telegram-id", type=int)
+    who.add_argument("--phone")
+
     sub.add_parser("list-admins", help="List admins")
 
     p = sub.add_parser("publish-legal", help="Publish a new immutable legal document version")
@@ -124,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "grant-admin":
         return asyncio.run(grant_admin(args.telegram_id, args.phone))
+    if args.cmd == "grant-manager":
+        return asyncio.run(grant_admin(args.telegram_id, args.phone, role=ROLE_MANAGER))
     if args.cmd == "list-admins":
         return asyncio.run(list_admins())
     if args.cmd == "publish-legal":

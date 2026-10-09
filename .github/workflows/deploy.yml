@@ -1,0 +1,54 @@
+name: Deploy
+
+# Test environment: deployed automatically after CI succeeds on main.
+# Production: started manually (Actions → Deploy → Run workflow) with a release tag.
+# Disabled until the repository variable DEPLOY_ENABLED is set to "true" and
+# secrets DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS exist.
+#
+# The SSH key is bound on the server to ONE fixed deploy script (forced command in
+# authorized_keys). The workflow only sends "<env> <git-ref>"; the server script
+# reads it from $SSH_ORIGINAL_COMMAND, validates it and runs the deployment.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "test or prod"
+        required: true
+        default: test
+        type: choice
+        options: [test, prod]
+      ref:
+        description: "Git ref to deploy (tag for prod, e.g. v0.1.0)"
+        required: true
+        default: origin/main
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'test' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'test' }}
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: Deploy
+        env:
+          ENV_NAME: ${{ github.event.inputs.environment || 'test' }}
+          REF: ${{ github.event.inputs.ref || 'origin/main' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "${{ secrets.DEPLOY_PORT }}" \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "$ENV_NAME $REF"

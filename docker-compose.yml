@@ -1,0 +1,56 @@
+# One environment (test OR prod) per checkout directory, each with its own .env:
+#   /opt/thetender-telegram/test  -> docker compose -p tg-test up -d --build
+#   /opt/thetender-telegram/prod  -> docker compose -p tg-prod up -d --build
+# Nothing listens on public interfaces: the app is bound to 127.0.0.1 and is
+# reached only through the server's existing nginx (see docker/nginx/).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thetender_tg
+      POSTGRES_USER: thetender
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thetender -d thetender_tg"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: ${DB_MEM_LIMIT:-384m}
+    cpus: ${DB_CPUS:-0.5}
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://thetender:${POSTGRES_PASSWORD}@db:5432/thetender_tg
+    ports:
+      - "127.0.0.1:${APP_PORT:?set APP_PORT in .env}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    mem_limit: ${APP_MEM_LIMIT:-384m}
+    cpus: ${APP_CPUS:-0.5}
+    logging: *logging
+
+volumes:
+  db-data:

@@ -151,3 +151,44 @@ async def test_cli_grant_admin_by_phone(db, monkeypatch):
     finally:
         get_settings.cache_clear()
     assert await users_svc.count_admins(db) == 1
+
+
+async def test_tracked_redirect_logs_click_and_ignores_previews(session_factory):
+    from app.integrations.thetender import MockTenderClient
+    from app.services.links import make_token
+
+    async with session_factory() as s:
+        s.add(User(telegram_id=999, phone="+380670000000"))
+        await s.commit()
+        uid = (await s.scalar(select(User).where(User.telegram_id == 999))).id
+
+    bot, _ = make_bot()
+    settings = make_settings(
+        public_base_url="https://tg-test.example.com", telegram_webhook_secret="s3cret"
+    )
+    app = create_app(settings, bot=bot, tender=MockTenderClient())
+    dest = "https://sandbox.mxuser.com/auction/LSE1?utm_source=telegram"
+    token = make_token(settings.link_signing_key, uid, dest, "SEARCH", "LSE1")
+    browser = {"user-agent": "Mozilla/5.0 (iPhone)"}
+    async with LifespanClient(app) as client:
+        r = await client.get(f"/r/{token}", headers=browser)
+        assert r.status_code == 302 and r.headers["location"] == dest
+        await client.head(f"/r/{token}", headers=browser)
+        await client.get(f"/r/{token}", headers={"user-agent": "TelegramBot (like TwitterBot)"})
+        bad = await client.get(f"/r/{token[:-2]}xx", headers=browser)
+        assert bad.status_code == 404
+        evil = make_token(settings.link_signing_key, uid, "https://evil.example.com", "SEARCH")
+        assert (await client.get(f"/r/{evil}", headers=browser)).status_code == 404
+
+    async with session_factory() as s:
+        clicks = (await s.scalars(select(Event).where(Event.event_type == "AUCTION_OPENED"))).all()
+    assert len(clicks) == 1  # HEAD and preview bot not counted
+    assert clicks[0].user_id == uid and clicks[0].event_data["source"] == "SEARCH"
+
+
+def test_mock_mode_forbidden_in_prod():
+    settings = make_settings(
+        environment="prod", thetender_mock=True, thetender_base_url="https://thetender.com.ua"
+    )
+    with pytest.raises(ValueError):
+        settings.validate_runtime()

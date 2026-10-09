@@ -31,7 +31,6 @@ async def test_menu_command(harness):
 async def test_menu_buttons_show_placeholders(harness):
     await register(harness)
     for button, section in [
-        (t.BTN_SEARCH, "Пошук аукціонів"),
         (t.BTN_MONITORINGS, "Мої моніторинги"),
         (t.BTN_CONSULTATION, "Консультація"),
     ]:

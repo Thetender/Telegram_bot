@@ -15,18 +15,26 @@ from contextlib import asynccontextmanager
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.bot.factory import configure_bot, create_bot, create_dispatcher
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
+from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
+from app.models import User
+from app.services import events
+from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
 
 log = logging.getLogger(__name__)
 
 
-def create_app(settings: Settings | None = None, bot: Bot | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    bot: Bot | None = None,
+    tender: TenderClient | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
     setup_logging(settings.log_level)
 
@@ -38,7 +46,8 @@ def create_app(settings: Settings | None = None, bot: Bot | None = None) -> Fast
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.bot = bot or create_bot(settings)
-        app.state.dp = create_dispatcher(settings, session_factory)
+        app.state.tender = tender or make_tender_client(settings)
+        app.state.dp = create_dispatcher(settings, session_factory, app.state.tender)
         if settings.bot_mode == "webhook":
             assert settings.telegram_webhook_secret is not None
             url = settings.public_base_url + settings.telegram_webhook_path
@@ -53,6 +62,7 @@ def create_app(settings: Settings | None = None, bot: Bot | None = None) -> Fast
             yield
         finally:
             await app.state.bot.session.close()
+            await app.state.tender.aclose()
             await engine.dispose()
 
     app = FastAPI(title="The Tender Telegram service", lifespan=lifespan, docs_url=None)
@@ -95,4 +105,41 @@ def create_app(settings: Settings | None = None, bot: Bot | None = None) -> Fast
             log.exception("Error while handling Telegram update %s", update.update_id)
         return Response(status_code=200)
 
+    allowed = allowed_hosts(settings.thetender_base_url)
+
+    @app.api_route("/r/{token}", methods=["GET", "HEAD"])
+    async def tracked_redirect(token: str, request: Request) -> Response:
+        """Signed auction link: log AUCTION_OPENED and redirect (FR §6.1).
+
+        HEAD requests and link-preview/bot fetches are redirected without
+        being counted as clicks. Works regardless of legal re-acceptance."""
+        key = settings.link_signing_key
+        target = parse_token(key, token) if key else None
+        if target is None or not is_allowed_destination(target.url, allowed):
+            return HTMLResponse(INVALID_LINK_PAGE, status_code=404)
+        if request.method == "GET" and not is_bot_user_agent(request.headers.get("user-agent")):
+            try:
+                async with request.app.state.session_factory() as session:
+                    user = await session.get(User, target.user_id)
+                    await events.log_event(
+                        session,
+                        events.AUCTION_OPENED,
+                        user_id=user.id if user else None,
+                        data={
+                            "source": target.source,
+                            "auction_number": target.auction_number,
+                            "url": target.url,
+                        },
+                    )
+                    await session.commit()
+            except Exception:  # noqa: BLE001 - analytics must never block the redirect
+                log.exception("Failed to log AUCTION_OPENED")
+        return RedirectResponse(target.url, status_code=302)
+
     return app
+
+
+INVALID_LINK_PAGE = """<!doctype html><html lang="uk"><meta charset="utf-8">
+<title>Посилання недійсне</title>
+<body style="font-family:sans-serif;padding:2em">
+<h3>Посилання недійсне</h3><p>Відкрийте аукціон заново з повідомлення бота.</p></body></html>"""

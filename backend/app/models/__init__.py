@@ -209,6 +209,39 @@ class PrivacyRequest(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class SearchDraft(Base):
+    """The user's current, unfinished search parameters (one per user)."""
+
+    __tablename__ = "search_drafts"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    params: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+
+class SearchSnapshot(Base):
+    """Immutable filter set of an executed search. Result buttons reference it."""
+
+    __tablename__ = "search_snapshots"
+    __table_args__ = (Index("ix_search_snapshots_user_created", "user_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # SEARCH = from the search screen; MONITORING = "show results" of a saved monitoring.
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="SEARCH")
+    # Highest result page already sent (protects "Показати ще" from double taps).
+    pages_shown: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 __all__ = [
     "Base",
     "User",
@@ -222,6 +255,8 @@ __all__ = [
     "LegalDocumentVersion",
     "UserLegalAcceptance",
     "PrivacyRequest",
+    "SearchDraft",
+    "SearchSnapshot",
     "ROLE_MANAGER",
     "ROLE_ADMIN",
 ]

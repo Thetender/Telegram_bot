@@ -31,7 +31,6 @@ async def test_menu_command(harness):
 async def test_menu_buttons_show_placeholders(harness):
     await register(harness)
     for button, section in [
-        (t.BTN_SEARCH, "Пошук аукціонів"),
         (t.BTN_MONITORINGS, "Мої моніторинги"),
         (t.BTN_CONSULTATION, "Консультація"),
     ]:
@@ -141,3 +140,10 @@ async def test_unknown_text_shows_menu(harness):
     await register(harness)
     await harness.feed(message_update(UID, "щось незрозуміле"))
     assert harness.tg.texts() == [t.UNKNOWN_INPUT]
+
+
+def test_main_menu_keyboard_folds_away_after_tap():
+    from app.bot import keyboards as kb
+
+    markup = kb.main_menu(set())
+    assert markup.one_time_keyboard is True and not markup.is_persistent

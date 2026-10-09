@@ -24,11 +24,6 @@ def create_router() -> Router:
         await state.clear()
         await message.answer(t.MAIN_MENU, reply_markup=kb.main_menu(roles))
 
-    @router.message(F.text == t.BTN_SEARCH)
-    async def on_search(message: Message, state: FSMContext, roles: set[str]) -> None:
-        await state.clear()
-        await message.answer(t.coming_soon("Пошук аукціонів"), reply_markup=kb.main_menu(roles))
-
     @router.message(F.text == t.BTN_MONITORINGS)
     async def on_monitorings(message: Message, state: FSMContext, roles: set[str]) -> None:
         await state.clear()

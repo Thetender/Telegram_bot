@@ -68,7 +68,8 @@ nano .env
 - `PUBLIC_BASE_URL=https://tg-test.thetender.com.ua`
 - `TELEGRAM_BOT_TOKEN=` — токен **тестового** бота (передасть власник продукту особисто)
 - `TELEGRAM_WEBHOOK_SECRET=`, `POSTGRES_PASSWORD=` — згенеровані вище значення
-- `THETENDER_BASE_URL=https://sandbox.mxuser.com`, `THETENDER_API_KEY=` — можна пізніше
+- `THETENDER_BASE_URL=https://sandbox.mxuser.com`, `THETENDER_API_KEY=` — sandbox-ключ від бекенд-розробника.
+  Поки ключа немає — `THETENDER_MOCK=true` (бот показуватиме демо-аукціони); коли ключ з'явиться — вписати ключ і `THETENDER_MOCK=false`, потім `scripts/deploy.sh test <та сама версія>`
 
 ## 4. DNS
 

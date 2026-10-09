@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.bot.factory import create_dispatcher
 from app.config import Settings
 from app.db import make_engine, make_session_factory
+from app.integrations.thetender import MockTenderClient
 from app.models import Base
 from tests.fake_telegram import FakeSession, make_bot
 
@@ -74,6 +75,7 @@ class BotHarness:
     tg: FakeSession
     dp: Dispatcher
     sf: async_sessionmaker[AsyncSession]
+    tender: MockTenderClient
 
     async def feed(self, update: Update) -> None:
         await self.dp.feed_update(self.bot, update)
@@ -82,5 +84,9 @@ class BotHarness:
 @pytest_asyncio.fixture
 async def harness(session_factory) -> BotHarness:
     bot, tg = make_bot()
-    dp = create_dispatcher(make_settings(), session_factory)
-    return BotHarness(bot=bot, tg=tg, dp=dp, sf=session_factory)
+    tender = MockTenderClient()
+    settings = make_settings(
+        public_base_url="https://tg-test.example.com", telegram_webhook_secret="s3cret"
+    )
+    dp = create_dispatcher(settings, session_factory, tender)
+    return BotHarness(bot=bot, tg=tg, dp=dp, sf=session_factory, tender=tender)

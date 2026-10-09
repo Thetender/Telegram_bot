@@ -75,60 +75,66 @@ def category_key(name: str) -> str:
 # ---------- rendering ----------
 
 
-BUTTON_VALUE_LEN = 28
-
-# (summary label, button text, callback action, callback value)
-PARAM_BUTTONS = (
-    ("Продаж / Оренда", t.BTN_P_DEAL, "deal", ""),
-    ("Тип аукціону", t.BTN_P_TYPE, "type", ""),
-    ("Категорія", t.BTN_P_CATEGORY, "cat", "0"),
-    ("Регіон", t.BTN_P_REGION, "reg", ""),
-    ("Місто", t.BTN_P_CITY, "txt", "city"),
-    ("Ключові слова", t.BTN_P_KEYWORDS, "txt", "keywords"),
-    ("Організатор", t.BTN_P_ORGANIZER, "txt", "customer_name"),
-    ("Ціна", t.BTN_P_PRICE, "price", ""),
-    ("Площа", t.BTN_P_AREA, "area", ""),
-)
-
-
-def _short(value: str) -> str:
-    return value if len(value) <= BUTTON_VALUE_LEN else value[: BUTTON_VALUE_LEN - 1] + "…"
-
-
 def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
-    """Chosen parameters come first, one per row with their value on the
-    button (tap = edit); parameters not chosen yet follow two per row."""
+    """Search "home" screen.
+
+    With chosen parameters: a short summary with the values as text and four
+    buttons (Search / Add-change / Clear / Main menu), so the text stays on
+    screen. With nothing chosen yet: straight to the parameter grid."""
     p = normalize(params)
-    values = dict(summary_lines(p))
-    chosen_rows: list[list[InlineKeyboardButton]] = []
-    free: list[InlineKeyboardButton] = []
-    for label, button, action, value in PARAM_BUTTONS:
-        if label in values:
-            text = f"✏️ {button}: {_short(values[label])}"
-            chosen_rows.append([_btn(text, action, value)])
-        else:
-            free.append(_btn(button, action, value))
-
-    lines = [t.SEARCH_TITLE, ""]
-    if chosen_rows:
-        lines.append(t.SEARCH_HINT_CHOSEN)
-    else:
-        lines += [t.SEARCH_HINT, "", t.SEARCH_NO_PARAMS]
-
-    rows = list(chosen_rows)
-    if chosen_rows and free:
-        rows.append([_btn(t.SEARCH_ADD_MORE, "noop")])
-    rows += [free[i : i + 2] for i in range(0, len(free), 2)]
-    rows.append([_btn(t.BTN_RUN_SEARCH, "run")])
-    rows.append([_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")])
+    summary = summary_lines(p)
+    if not summary:
+        return render_grid(p)
+    lines = [t.SEARCH_TITLE, "", "<b>Обрані параметри:</b>"]
+    lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    rows = [
+        [_btn(t.BTN_RUN_SEARCH, "run")],
+        [_btn(t.BTN_EDIT_PARAMS, "grid")],
+        [_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")],
+    ]
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_grid(params: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Parameter grid: ✅ marks parameters that are already chosen."""
+    p = normalize(params)
+
+    def mark(label: str, is_set: bool) -> str:
+        return f"✅ {label}" if is_set else label
+
+    rows = [
+        [
+            _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal"),
+            _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type"),
+        ],
+        [
+            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0"),
+            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg"),
+        ],
+        [
+            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city"),
+            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords"),
+        ],
+        [
+            _btn(mark(t.BTN_P_ORGANIZER, "customer_name" in p), "txt", "customer_name"),
+            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price"),
+        ],
+        [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area")],
+    ]
+    if summary_lines(p):
+        text = f"{t.SEARCH_TITLE}\n\n{t.CHOOSE_PARAM}"
+        rows.append([_btn(t.BTN_BACK, "open")])
+    else:
+        text = f"{t.SEARCH_TITLE}\n\n{t.SEARCH_HINT}"
+        rows.append([_btn(t.BTN_MAIN_MENU, "menu")])
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def back_row(clear_target: str | None = None) -> list[InlineKeyboardButton]:
     """Bottom row of every parameter screen: [🗑 Очистити] (only when the
-    parameter is set) on the left, [◀️ До параметрів] on the right."""
+    parameter is set) on the left, [◀️ Назад] (to the grid) on the right."""
     row = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)] if clear_target else []
-    row.append(_btn(t.BTN_BACK_TO_PARAMS, "open"))
+    row.append(_btn(t.BTN_BACK, "grid"))
     return row
 
 
@@ -229,7 +235,7 @@ def create_router() -> Router:
     ) -> None:
         await state.clear()
         params = await search_svc.get_draft(session, user.id)
-        await edit_or_send(callback, *render_screen(params))
+        await edit_or_send(callback, *render_grid(params))
         await callback.answer()
 
     @router.callback_query(SCb.filter(F.a == "menu"))
@@ -240,8 +246,13 @@ def create_router() -> Router:
             callback.from_user.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles)
         )
 
-    @router.callback_query(SCb.filter(F.a == "noop"))
-    async def on_noop(callback: CallbackQuery) -> None:
+    @router.callback_query(SCb.filter(F.a == "grid"))
+    async def on_grid(
+        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
+    ) -> None:
+        await state.clear()
+        params = await search_svc.get_draft(session, user.id)
+        await edit_or_send(callback, *render_grid(params))
         await callback.answer()
 
     # --- single choice: deal type and auction type ---

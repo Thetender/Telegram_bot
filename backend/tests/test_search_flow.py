@@ -54,14 +54,17 @@ async def test_open_search_screen_and_resume_draft(harness):
     h = harness
     await register(h)
     await say(h, t.BTN_SEARCH)
-    assert t.SEARCH_NO_PARAMS in h.tg.texts()[-1]
+    assert t.SEARCH_HINT in h.tg.texts()[-1]  # empty draft: straight to the grid
     await tap(h, "set", "auction_type=rent")
-    assert "✏️ Продаж / Оренда: Оренда" in labels(h)
-    assert labels(h).index("✏️ Продаж / Оренда: Оренда") == 0  # chosen ones on top
+    # After a choice: summary with values as text + 4 buttons.
+    assert "• Продаж / Оренда: Оренда" in h.tg.texts()[-1]
+    assert labels(h) == [t.BTN_RUN_SEARCH, t.BTN_EDIT_PARAMS, t.BTN_CLEAR_PARAMS, t.BTN_MAIN_MENU]
+    await tap(h, "grid")
+    assert "✅ Продаж / Оренда" in labels(h) and labels(h)[-1] == t.BTN_BACK
     # Leave and come back: draft is resumed.
     await say(h, t.BTN_HELP)
     await say(h, t.BTN_SEARCH)
-    assert "✏️ Продаж / Оренда: Оренда" in labels(h)
+    assert "• Продаж / Оренда: Оренда" in h.tg.texts()[-1]
     async with h.sf() as s:
         assert (
             await s.scalar(
@@ -111,7 +114,7 @@ async def test_text_inputs_and_menu_override(harness):
     await tap(h, "txt", "city")
     await say(h, "Біла Церква")
     assert (await draft(h))["city"] == "Біла Церква"
-    assert "✏️ Місто: Біла Церква" in labels(h)
+    assert "• Місто: Біла Церква" in h.tg.texts()[-1]
 
     # A menu button while waiting for keywords cancels input; it is never stored.
     await tap(h, "txt", "keywords")
@@ -225,7 +228,7 @@ async def test_clear_button_only_when_parameter_is_set(harness):
         await tap(h, "set", field)
         await tap(h, action, value)
         row = last_markup(h).inline_keyboard[-1]
-        assert [b.text for b in row] == [t.BTN_CLEAR_FIELD, t.BTN_BACK_TO_PARAMS]  # clear left
+        assert [b.text for b in row] == [t.BTN_CLEAR_FIELD, t.BTN_BACK]  # clear left
         await tap(h, "fclr", field.split("=")[0])
     assert await draft(h) == {}
 

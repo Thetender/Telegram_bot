@@ -32,8 +32,10 @@ from app.models import (
 )
 from app.services import access as access_svc
 from app.services import admin as svc
+from app.services import consultations as consult_svc
 from app.services import events, legal
 from app.services import users as users_svc
+from app.services.search_params import summary_lines
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +90,11 @@ FLASH = {
     "admin_removed": ("ok", "Адміністратора прибрано."),
     "manager_added": ("ok", "Роль менеджера надано."),
     "manager_removed": ("ok", "Роль менеджера знято."),
+    "manager_added_unnotified": (
+        "warn",
+        "Роль менеджера надано, але бот не зміг надіслати людині повідомлення "
+        "(вона заблокувала бота?).",
+    ),
     "saved": ("ok", "Збережено ✅"),
     "closed": ("ok", "Заявку закрито адміністратором."),
     "not_closed": ("warn", "Заявку вже завершено або закрито."),
@@ -171,6 +178,7 @@ def render(request: Request, name: str, ctx: auth.AdminContext | None, section: 
             "status_labels": STATUS_LABELS,
             "result_labels": RESULT_LABELS,
             "event_labels": EVENT_LABELS,
+            "summary": summary_lines,
             "environment": settings.environment,
             **data,
         },
@@ -290,6 +298,7 @@ def create_router() -> APIRouter:
             ctx,
             "users",
             rows=rows,
+            mcounts=await svc.monitoring_counts(session, [u.id for u, _ in rows]),
             total=total,
             page=page,
             pages=pages,
@@ -348,17 +357,19 @@ def create_router() -> APIRouter:
 
     @router.post("/users/{user_id}/manager")
     async def user_manager_role(
-        session: DB, ctx: Admin, user_id: int, csrf: str = Form(""), action: str = Form("")
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        user_id: int,
+        csrf: str = Form(""),
+        action: str = Form(""),
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         user = await session.get(User, user_id)
         if user is None:
             raise HTTPException(404)
-        if action == "grant":
-            await users_svc.grant_role(session, user, ROLE_MANAGER, actor_user_id=ctx.user.id)
-            return redirect(f"/admin/users/{user_id}", "manager_added")
-        await users_svc.revoke_role(session, user, ROLE_MANAGER, actor_user_id=ctx.user.id)
-        return redirect(f"/admin/users/{user_id}", "manager_removed")
+        msg = await _set_manager_role(request, session, ctx, user, grant=action == "grant")
+        return redirect(f"/admin/users/{user_id}", msg)
 
     # ---------------- consultations ----------------
 
@@ -449,6 +460,7 @@ def create_router() -> APIRouter:
     ) -> Response:
         admins = await svc.staff(session, ROLE_ADMIN)
         managers = await svc.staff(session, ROLE_MANAGER)
+        bot_username = await _bot_username(request)
         admin_found = await svc.find_registered(session, find_admin) if find_admin else None
         manager_found = await svc.find_registered(session, find_manager) if find_manager else None
         return render(
@@ -467,6 +479,7 @@ def create_router() -> APIRouter:
             manager_found=manager_found,
             admin_ids={r.user.id for r in admins},
             manager_ids={r.user.id for r in managers},
+            bot_link=f"https://t.me/{bot_username}" if bot_username else None,
             today=datetime.now(UTC).date().isoformat(),
         )
 
@@ -529,25 +542,25 @@ def create_router() -> APIRouter:
 
     @router.post("/settings/managers/add")
     async def add_manager(
-        session: DB, ctx: Admin, csrf: str = Form(""), user_id: int = Form(...)
+        request: Request, session: DB, ctx: Admin, csrf: str = Form(""), user_id: int = Form(...)
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         user = await session.get(User, user_id)
         if user is None:
             raise HTTPException(404)
-        await users_svc.grant_role(session, user, ROLE_MANAGER, actor_user_id=ctx.user.id)
-        return redirect("/admin/settings", "manager_added")
+        msg = await _set_manager_role(request, session, ctx, user, grant=True)
+        return redirect("/admin/settings", msg)
 
     @router.post("/settings/managers/{user_id}/remove")
     async def remove_manager(
-        session: DB, ctx: Admin, user_id: int, csrf: str = Form("")
+        request: Request, session: DB, ctx: Admin, user_id: int, csrf: str = Form("")
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         user = await session.get(User, user_id)
         if user is None:
             raise HTTPException(404)
-        await users_svc.revoke_role(session, user, ROLE_MANAGER, actor_user_id=ctx.user.id)
-        return redirect("/admin/settings", "manager_removed")
+        msg = await _set_manager_role(request, session, ctx, user, grant=False)
+        return redirect("/admin/settings", msg)
 
     @router.post("/settings/legal/publish")
     async def legal_publish(
@@ -631,6 +644,41 @@ def _parse_date(value: str) -> date | None:
         return date.fromisoformat(value) if value else None
     except ValueError:
         return None
+
+
+async def _set_manager_role(
+    request: Request, session: AsyncSession, ctx: auth.AdminContext, user: User, grant: bool
+) -> str:
+    """Grant/revoke MANAGER and tell the person in the bot (with the updated menu)."""
+    from app.bot import keyboards as kb
+    from app.bot import texts as t
+
+    if grant:
+        changed = await users_svc.grant_role(session, user, ROLE_MANAGER, actor_user_id=ctx.user.id)
+    else:
+        changed = await users_svc.revoke_role(
+            session, user, ROLE_MANAGER, actor_user_id=ctx.user.id
+        )
+    await session.commit()
+    flash = "manager_added" if grant else "manager_removed"
+    if not changed or user.anonymized_at is not None:
+        return flash
+    roles = await users_svc.get_roles(session, user.id)
+    if grant:
+        text = t.MANAGER_GRANTED
+        waiting = await consult_svc.count_new(session)
+        if waiting:
+            text += "\n\n" + t.MANAGER_NEW_WAITING.format(count=waiting)
+    else:
+        text = t.MANAGER_REVOKED
+    bot: Bot = request.app.state.bot
+    try:
+        await bot.send_message(user.telegram_id, text, reply_markup=kb.main_menu(roles))
+    except TelegramAPIError as exc:
+        log.info("Manager role message to user %s not delivered: %s", user.id, exc)
+        if grant:
+            return "manager_added_unnotified"
+    return flash
 
 
 async def _bot_username(request: Request) -> str | None:

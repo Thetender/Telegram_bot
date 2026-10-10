@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import filters
 from app.bot import keyboards as kb
 from app.bot import texts as t
+from app.integrations.thetender import TenderClient
+from app.models import User
 from app.services import legal
 
 
@@ -25,9 +27,17 @@ def create_router() -> Router:
         await message.answer(t.MAIN_MENU, reply_markup=kb.main_menu(roles))
 
     @router.message(F.text == t.BTN_MONITORINGS)
-    async def on_monitorings(message: Message, state: FSMContext, roles: set[str]) -> None:
+    async def on_monitorings(
+        message: Message,
+        state: FSMContext,
+        session: AsyncSession,
+        user: User,
+        tender: TenderClient,
+    ) -> None:
+        from app.bot.handlers.monitorings import send_list
+
         await state.clear()
-        await message.answer(t.coming_soon("Мої моніторинги"), reply_markup=kb.main_menu(roles))
+        await send_list(message.bot, message.chat.id, session, tender, user)
 
     @router.message(F.text == t.BTN_HELP)
     async def on_help(message: Message, state: FSMContext, session: AsyncSession) -> None:

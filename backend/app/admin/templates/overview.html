@@ -10,8 +10,8 @@
 <div class="cards">
   <div class="card stat"><div class="label">Користувачі</div><div class="value">{{ o.users_total }}</div>
     <div class="sub"><b>+{{ o.users_new }}</b> за {{ o.period_days }} днів</div></div>
-  <div class="card stat"><div class="label">Активні моніторинги</div><div class="value">—</div>
-    <div class="sub">з'являться в Iteration 5</div></div>
+  <div class="card stat"><div class="label">Активні моніторинги</div><div class="value">{{ o.monitorings_active }}</div>
+    <div class="sub"><b>+{{ o.monitorings_new }}</b> · сповіщень надіслано: {{ o.notifications_sent }}</div></div>
   <div class="card stat"><div class="label">Пошуки</div><div class="value">{{ o.searches }}</div>
     <div class="sub">за {{ o.period_days }} днів</div></div>
   <div class="card stat"><div class="label">Консультації</div><div class="value">{{ o.consultations }}</div>

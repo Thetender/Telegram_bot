@@ -190,3 +190,61 @@ def test_bot_user_agents():
     assert links.is_bot_user_agent("TelegramBot (like TwitterBot)")
     assert links.is_bot_user_agent(None)
     assert not links.is_bot_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")
+
+
+async def test_client_monitoring_crud_contract():
+    """Monitoring calls follow API doc §6: JSON body, full replacement, no retry on create."""
+    import json as jsonlib
+
+    import httpx
+
+    from app.integrations.thetender.client import HttpTenderClient, TenderError
+
+    seen: list[tuple[str, str, dict | None]] = []
+    stored = {"id": 15, "user_id": "777", "monitoring": {"name": "Київ", "region": "Київ"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = jsonlib.loads(request.content) if request.content else None
+        seen.append((request.method, str(request.url), body))
+        path = request.url.path
+        if path == "/rest/monitoring" and request.method == "GET":
+            return httpx.Response(200, json=[stored])
+        if path == "/rest/monitoring/create":
+            if body["name"] == "fail":
+                return httpx.Response(503)
+            return httpx.Response(200, json={"saved": True, "errors": [], "data": stored})
+        if path == "/rest/monitoring/update":
+            return httpx.Response(
+                200, json={"saved": False, "errors": ["Невідомий регіон"], "data": None}
+            )
+        if path == "/rest/monitoring/delete":
+            return httpx.Response(200, json={"deleted": True})
+        return httpx.Response(404)
+
+    c = HttpTenderClient(
+        base_url="https://thetender.com.ua", api_key="k", transport=httpx.MockTransport(handler)
+    )
+    (m,) = await c.list_monitorings("777")
+    assert (m.id, m.name, m.params) == ("15", "Київ", {"regions": ["Київ"]})
+    created = await c.create_monitoring("777", "Київ", {"regions": ["Київ"]})
+    assert created.id == "15"
+    method, url, body = seen[-1]
+    assert method == "POST" and body["user_id"] == "777" and body["region"] == ["Київ"]
+    assert body["keywords"] is None
+    try:
+        await c.update_monitoring("15", "777", "Київ", {"regions": ["Київ"]})
+    except TenderError as exc:
+        assert exc.kind == "validation" and exc.errors == ["Невідомий регіон"]
+    else:
+        raise AssertionError("expected validation error")
+    assert seen[-1][0] == "PUT" and "id=15" in seen[-1][1]
+    await c.delete_monitoring("15")
+    assert seen[-1][0] == "DELETE" and "id=15" in seen[-1][1]
+
+    before = len(seen)
+    try:
+        await c.create_monitoring("777", "fail", {"regions": ["Київ"]})
+    except TenderError as exc:
+        assert exc.kind == "ambiguous"
+    assert len(seen) - before == 1  # a non-idempotent create is never retried
+    await c.aclose()

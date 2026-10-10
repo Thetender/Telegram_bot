@@ -225,10 +225,6 @@ def create_router() -> Router:
             except Exception:  # noqa: BLE001 - cosmetic only
                 pass
 
-    @router.callback_query(RCb.filter(F.a == "mon"))
-    async def on_monitoring(callback: CallbackQuery) -> None:
-        await callback.answer(t.MONITORING_SOON, show_alert=True)
-
     def confirm(yes_text: str, yes_action: str, snap: SearchSnapshot) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[

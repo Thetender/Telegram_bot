@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -22,6 +22,7 @@ from app.models import (
     LegalDocument,
     LegalDocumentVersion,
     ManagerSettings,
+    Monitoring,
     PrivacyRequest,
     User,
     UserRole,
@@ -44,6 +45,9 @@ class Overview:
     consultations: int
     consultations_new: int
     series: list[tuple[date, int, int]]  # (day, registrations, searches)
+    monitorings_active: int = 0
+    monitorings_new: int = 0
+    notifications_sent: int = 0
 
 
 async def overview(session: AsyncSession, period_days: int, tz: str) -> Overview:
@@ -88,7 +92,26 @@ async def overview(session: AsyncSession, period_days: int, tz: str) -> Overview
         d = today - timedelta(days=i)
         reg, srch = per_day.get(d, [0, 0])
         series.append((d, reg, srch))
+    monitorings_active = await session.scalar(
+        select(func.count())
+        .select_from(Monitoring)
+        .join(User, User.id == Monitoring.user_id)
+        .where(Monitoring.deleted_at.is_(None), active_users)
+    )
+    monitorings_new = await session.scalar(
+        select(func.count())
+        .select_from(Monitoring)
+        .where(Monitoring.deleted_at.is_(None), Monitoring.created_at >= since)
+    )
+    notifications_sent = await session.scalar(
+        select(func.count())
+        .select_from(Event)
+        .where(Event.event_type == events.AUCTION_NOTIFICATION_SENT, Event.created_at >= since)
+    )
     return Overview(
+        monitorings_active=monitorings_active or 0,
+        monitorings_new=monitorings_new or 0,
+        notifications_sent=notifications_sent or 0,
         period_days=period_days,
         users_total=users_total or 0,
         users_new=users_new or 0,
@@ -146,6 +169,17 @@ async def list_users(
     return [(u, roles.get(u.id, set())) for u in users], total
 
 
+async def monitoring_counts(session: AsyncSession, user_ids: list[int]) -> dict[int, int]:
+    if not user_ids:
+        return {}
+    rows = await session.execute(
+        select(Monitoring.user_id, func.count())
+        .where(Monitoring.user_id.in_(user_ids), Monitoring.deleted_at.is_(None))
+        .group_by(Monitoring.user_id)
+    )
+    return {uid: count for uid, count in rows}
+
+
 async def roles_for(session: AsyncSession, user_ids: list[int]) -> dict[int, set[str]]:
     if not user_ids:
         return {}
@@ -195,6 +229,7 @@ class UserProfile:
     consultations: list[ConsultationRequest]
     timeline: list[Event]
     actors: dict[int, User]
+    monitorings: list[Monitoring] = field(default_factory=list)
 
 
 async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | None:
@@ -228,7 +263,15 @@ async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | Non
         actors = {
             u.id: u for u in await session.scalars(select(User).where(User.id.in_(actor_ids)))
         }
+    monitorings = (
+        await session.scalars(
+            select(Monitoring)
+            .where(Monitoring.user_id == user.id, Monitoring.deleted_at.is_(None))
+            .order_by(Monitoring.created_at)
+        )
+    ).all()
     return UserProfile(
+        monitorings=list(monitorings),
         user=user,
         roles=roles,
         searches=searches or 0,

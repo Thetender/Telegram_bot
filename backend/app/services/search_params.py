@@ -107,6 +107,52 @@ def to_api(params: dict[str, Any]) -> dict[str, str]:
     return out
 
 
+def to_monitoring_body(params: dict[str, Any]) -> dict[str, Any]:
+    """JSON body for monitoring create/update.
+
+    Update is a FULL replacement on the backend (omitted fields are
+    cleared), so every filter field is always sent, null when unset.
+    Regions go as a JSON array (API doc §5)."""
+    p = normalize(params)
+    body: dict[str, Any] = {}
+    for key in API_FIELDS:
+        if key == "region":
+            body["region"] = list(p["regions"]) if p.get("regions") else None
+        else:
+            body[key] = p.get(key)
+    return body
+
+
+def _api_number(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        d = Decimal(str(value).replace(",", ".").replace(" ", ""))
+    except (InvalidOperation, ValueError):
+        return None
+    return str(int(d)) if d == d.to_integral_value() else str(d.normalize())
+
+
+def from_api(monitoring: dict[str, Any] | None) -> dict[str, Any]:
+    """Local params from a monitoring read-back (regions come comma-separated)."""
+    m = monitoring or {}
+    out: dict[str, Any] = {}
+    for key in ("auction_type", "start_price_type", "category", *TEXT_FIELDS, "area_unit"):
+        value = m.get(key)
+        if isinstance(value, str) and value.strip():
+            out[key] = value.strip()
+    region = m.get("region")
+    if isinstance(region, list):
+        out["regions"] = [str(r).strip() for r in region if str(r).strip()]
+    elif isinstance(region, str) and region.strip():
+        out["regions"] = [r.strip() for r in region.split(",") if r.strip()]
+    for key in NUMBER_FIELDS:
+        number = _api_number(m.get(key))
+        if number is not None:
+            out[key] = number
+    return normalize(out)
+
+
 def parse_number(text: str) -> Decimal:
     """Parse '1 000 000', '1000,50', '1.5'. Raises ValueError."""
     cleaned = re.sub(r"[\s  ]", "", text or "").replace(",", ".")

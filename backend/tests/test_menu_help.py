@@ -28,14 +28,11 @@ async def test_menu_command(harness):
     assert harness.tg.texts() == [t.MAIN_MENU]
 
 
-async def test_menu_buttons_show_placeholders(harness):
+async def test_my_monitorings_empty_state(harness):
     await register(harness)
-    for button, section in [
-        (t.BTN_MONITORINGS, "Мої моніторинги"),
-    ]:
-        harness.tg.clear()
-        await harness.feed(message_update(UID, button))
-        assert harness.tg.texts() == [t.coming_soon(section)]
+    harness.tg.clear()
+    await harness.feed(message_update(UID, t.BTN_MONITORINGS))
+    assert harness.tg.texts() == [f"{t.MON_TITLE}\n\n{t.MON_EMPTY}"]
 
 
 async def test_menu_text_overrides_pending_input(harness):

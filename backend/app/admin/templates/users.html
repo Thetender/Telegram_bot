@@ -27,7 +27,7 @@
       <td>{% if u.username %}@{{ u.username }}<br>{% endif %}<span class="muted">{{ u.telegram_id }}</span></td>
       <td>{{ fmt_dt(u.registered_at) }}</td>
       <td>{{ fmt_dt(u.last_activity_at) }}</td>
-      <td class="muted">— <small>(Iteration 5)</small></td>
+      <td>{{ mcounts.get(u.id, 0) }}</td>
     </tr>
   {% else %}
     <tr><td colspan="6" class="muted">Нікого не знайдено.</td></tr>

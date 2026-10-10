@@ -8,8 +8,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import Any
 
-from app.integrations.thetender.client import DEFAULT_PAGESIZE, Auction, AuctionPage, TenderError
+from app.integrations.thetender.client import (
+    DEFAULT_PAGESIZE,
+    Auction,
+    AuctionPage,
+    ExternalMonitoring,
+    TenderError,
+    parse_monitoring,
+)
+from app.services.search_params import to_monitoring_body
 
 DEMO_CATEGORIES = [
     "Нерухомість",
@@ -34,6 +43,8 @@ class MockTenderClient:
 
     categories: list[str] = field(default_factory=lambda: list(DEMO_CATEGORIES))
     fail_with: str | None = None
+    # e.g. {"create": "unavailable"} or {"create_ambiguous": "1"}
+    fail_monitoring: dict[str, str] = field(default_factory=dict)
     calls: list[tuple[str, dict]] = field(default_factory=list)
     is_mock: bool = True
 
@@ -76,6 +87,78 @@ class MockTenderClient:
                 )
             )
         return AuctionPage(items=items, page=page, pages_count=pages, items_count=total)
+
+    # --- monitorings (in memory; same semantics as the real API) ---
+
+    def _ensure_store(self) -> dict[str, dict]:
+        if not hasattr(self, "_monitorings"):
+            self._monitorings: dict[str, dict] = {}
+            self._next_id = 100
+        return self._monitorings
+
+    def _check(self, kind: str) -> None:
+        if self.fail_with:
+            raise TenderError(self.fail_with)
+        if kind in self.fail_monitoring:
+            raise TenderError(self.fail_monitoring[kind])
+
+    async def list_monitorings(self, user_id: str) -> list[ExternalMonitoring]:
+        self.calls.append(("monitoring_list", {"user_id": user_id}))
+        self._check("list")
+        return [
+            parse_monitoring(d) for d in self._ensure_store().values() if d["user_id"] == user_id
+        ]
+
+    def _validate(self, user_id: str, name: str, body: dict) -> None:
+        if not name:
+            raise TenderError("validation", "name", errors=["Вкажіть назву моніторингу"])
+        if not any(v not in (None, "", []) for v in body.values()):
+            raise TenderError("validation", "filters", errors=["Потрібен хоча б один фільтр"])
+
+    async def create_monitoring(
+        self, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring:
+        body = to_monitoring_body(params)
+        self.calls.append(("monitoring_create", {"user_id": user_id, "name": name, **body}))
+        self._check("create")
+        self._validate(user_id, name, body)
+        store = self._ensure_store()
+        if sum(1 for d in store.values() if d["user_id"] == user_id) >= 200:
+            raise TenderError("validation", "limit", errors=["Досягнуто ліміту 200 моніторингів"])
+        self._next_id += 1
+        stored = self._stored(str(self._next_id), user_id, name, body)
+        store[str(stored["id"])] = stored
+        if "create_ambiguous" in self.fail_monitoring:
+            # Saved on the backend, but the response was lost.
+            raise TenderError("ambiguous", "timeout")
+        return parse_monitoring(stored)
+
+    async def update_monitoring(
+        self, monitoring_id: str, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring:
+        body = to_monitoring_body(params)
+        self.calls.append(("monitoring_update", {"id": monitoring_id, "name": name, **body}))
+        self._check("update")
+        store = self._ensure_store()
+        if monitoring_id not in store or store[monitoring_id]["user_id"] != user_id:
+            raise TenderError("not_found")
+        self._validate(user_id, name, body)
+        store[monitoring_id] = self._stored(monitoring_id, user_id, name, body)
+        return parse_monitoring(store[monitoring_id])
+
+    async def delete_monitoring(self, monitoring_id: str) -> None:
+        self.calls.append(("monitoring_delete", {"id": monitoring_id}))
+        self._check("delete")
+        if self._ensure_store().pop(monitoring_id, None) is None:
+            raise TenderError("not_found")
+
+    @staticmethod
+    def _stored(monitoring_id: str, user_id: str, name: str, body: dict) -> dict:
+        monitoring = {"name": name, **body}
+        if isinstance(monitoring.get("region"), list):
+            # The real API returns regions as a comma-separated string.
+            monitoring["region"] = ",".join(monitoring["region"])
+        return {"id": int(monitoring_id), "user_id": user_id, "monitoring": monitoring}
 
     async def aclose(self) -> None:
         return None

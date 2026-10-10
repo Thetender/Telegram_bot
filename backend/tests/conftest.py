@@ -48,6 +48,7 @@ def make_settings(**overrides) -> Settings:
         "telegram_bot_token": "42:TEST_TOKEN_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "database_url": TEST_DATABASE_URL,
         "bot_mode": "polling",
+        "delivery_worker_enabled": False,
     }
     data.update(overrides)
     return Settings.model_validate(data)

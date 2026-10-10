@@ -1,7 +1,5 @@
-"""FastAPI application: health check and Telegram webhook endpoint.
-
-Later iterations add: The Tender notification webhook, signed redirect
-endpoint for click tracking and the Admin Dashboard API.
+"""FastAPI application: health check, Telegram webhook, The Tender
+new-auction webhook, signed redirect for click tracking, Admin Dashboard.
 """
 
 from __future__ import annotations
@@ -25,10 +23,15 @@ from app.db import make_engine, make_session_factory
 from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
 from app.models import User
-from app.services import events
+from app.services import events, notifications
 from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
+from app.workers.delivery import DeliveryWorker
 
 log = logging.getLogger(__name__)
+
+# Address for The Tender developer: https://<host>/thetender/webhook
+# (they append ?auth=<key> themselves).
+THETENDER_WEBHOOK_PATH = "/thetender/webhook"
 
 
 def create_app(
@@ -50,6 +53,9 @@ def create_app(
         app.state.bot = bot or create_bot(settings)
         app.state.tender = tender or make_tender_client(settings)
         app.state.dp = create_dispatcher(settings, session_factory, app.state.tender)
+        app.state.worker = DeliveryWorker(app.state.bot, session_factory, settings)
+        if settings.delivery_worker_enabled:
+            app.state.worker.start()
         if settings.bot_mode == "webhook":
             assert settings.telegram_webhook_secret is not None
             url = settings.public_base_url + settings.telegram_webhook_path
@@ -63,6 +69,7 @@ def create_app(
         try:
             yield
         finally:
+            await app.state.worker.stop()
             await app.state.bot.session.close()
             await app.state.tender.aclose()
             await engine.dispose()
@@ -110,6 +117,44 @@ def create_app(
             # Telegram re-sending it endlessly. The error goes to logs/alerts.
             log.exception("Error while handling Telegram update %s", update.update_id)
         return Response(status_code=200)
+
+    @app.post(THETENDER_WEBHOOK_PATH)
+    async def thetender_webhook(request: Request) -> Response:
+        """New auction from The Tender (API doc §7): <url>?auth=<Telegram API key>.
+
+        Persist + deduplicate, then answer 200 quickly; Telegram messages are
+        sent by the delivery worker. Duplicates/retries are harmless."""
+        expected = (
+            settings.thetender_api_key.get_secret_value() if settings.thetender_api_key else ""
+        )
+        received = request.query_params.get("auth", "")
+        if not expected or not hmac.compare_digest(received.encode(), expected.encode()):
+            log.warning("The Tender webhook: rejected request with invalid credentials")
+            return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+        try:
+            payload = await request.json()
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+        try:
+            event = notifications.parse_event(payload)
+        except notifications.WebhookError as exc:
+            # Permanent problem: a retry would not help, so answer 200 and log.
+            log.error("The Tender webhook: payload dropped: %s", exc)
+            return JSONResponse({"ok": True, "accepted": 0, "dropped": str(exc)})
+        if event is None:
+            return JSONResponse({"ok": True, "ignored": True})
+        async with request.app.state.session_factory() as session:
+            queued = await notifications.ingest(session, event)
+            await session.commit()
+        log.info(
+            "The Tender webhook: auction %s, %s recipients, %s new deliveries",
+            event.canonical_auction_id,
+            len(event.recipients),
+            queued,
+        )
+        if queued:
+            request.app.state.worker.wake()
+        return JSONResponse({"ok": True, "accepted": queued})
 
     allowed = allowed_hosts(settings.thetender_base_url)
 

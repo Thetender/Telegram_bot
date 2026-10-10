@@ -254,6 +254,80 @@ class SearchDraft(Base):
     updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
 
 
+class Monitoring(Base):
+    """Local index/cache of a The Tender monitoring (The Tender is canonical).
+    Used for the bot UI callbacks, Dashboard counts and future campaigns."""
+
+    __tablename__ = "monitorings"
+    __table_args__ = (Index("ix_monitorings_user_active", "user_id", "deleted_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    raw: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+
+class MonitoringEditDraft(Base):
+    """Unsaved edits of one monitoring. Independent from the search draft."""
+
+    __tablename__ = "monitoring_edit_drafts"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    monitoring_id: Mapped[int] = mapped_column(
+        ForeignKey("monitorings.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+
+class NotificationDelivery(Base):
+    """Durable queue of "new auction" messages from The Tender webhook.
+
+    One row per (auction, Telegram user): duplicates and webhook retries
+    never produce a second message."""
+
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "canonical_auction_id", "telegram_user_id", name="uq_delivery_auction_user"
+        ),
+        CheckConstraint(
+            "status IN ('PENDING','SENDING','SENT','FAILED','SKIPPED')", name="status_valid"
+        ),
+        Index("ix_deliveries_queue", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    canonical_auction_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    monitoring_name: Mapped[str | None] = mapped_column(String(255))
+    auction: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = utcnow_column(nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 class SearchSnapshot(Base):
     """Immutable filter set of an executed search. Result buttons reference it."""
 
@@ -383,6 +457,9 @@ class AdminInvitation(Base):
 
 
 __all__ = [
+    "Monitoring",
+    "MonitoringEditDraft",
+    "NotificationDelivery",
     "BlockedPhone",
     "Base",
     "User",

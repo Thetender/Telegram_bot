@@ -34,6 +34,7 @@ from app.services import access as access_svc
 from app.services import admin as svc
 from app.services import events, legal
 from app.services import users as users_svc
+from app.services.search_params import summary_lines
 
 log = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ def render(request: Request, name: str, ctx: auth.AdminContext | None, section: 
             "status_labels": STATUS_LABELS,
             "result_labels": RESULT_LABELS,
             "event_labels": EVENT_LABELS,
+            "summary": summary_lines,
             "environment": settings.environment,
             **data,
         },
@@ -290,6 +292,7 @@ def create_router() -> APIRouter:
             ctx,
             "users",
             rows=rows,
+            mcounts=await svc.monitoring_counts(session, [u.id for u, _ in rows]),
             total=total,
             page=page,
             pages=pages,

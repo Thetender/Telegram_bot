@@ -1,8 +1,14 @@
-"""Auction search parameter screen (FR §5, UI/UX §4).
+"""Auction search parameter screens (FR §5, UI/UX §4).
 
-One parameter screen; parameters can be set in any order; the draft is
-persisted (search_drafts) and resumed. Text inputs use FSM states; menu
-buttons and commands are handled earlier and always cancel pending input.
+The same screens edit two independent drafts, selected by the callback
+field ``d``:
+
+* ``""``  — the search draft (search_drafts), resumed when the user returns;
+* ``"e"`` — the edit copy of a saved monitoring (monitoring_edit_drafts).
+
+Editing a monitoring never touches the unfinished search draft. Text inputs
+use FSM states (the draft kind is kept in the state data); menu buttons and
+commands are handled earlier and always cancel pending input.
 """
 
 from __future__ import annotations
@@ -23,10 +29,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import filters
 from app.bot import keyboards as kb
 from app.bot import texts as t
+from app.bot.callbacks import MCb
 from app.config import Settings
 from app.integrations.thetender import TenderClient, TenderError
 from app.models import User
 from app.services import events
+from app.services import monitorings as mon_svc
 from app.services import search as search_svc
 from app.services.search_params import (
     AREA_UNITS,
@@ -56,6 +64,7 @@ CLEARABLE = {"auction_type", "start_price_type", "category", "regions"}
 class SCb(CallbackData, prefix="s"):
     a: str
     v: str = ""
+    d: str = ""  # "" = search draft, "e" = monitoring edit draft
 
 
 class SearchInput(StatesGroup):
@@ -64,12 +73,47 @@ class SearchInput(StatesGroup):
     max_value = State()
 
 
-def _btn(text: str, a: str, v: str = "") -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text, callback_data=SCb(a=a, v=v).pack())
+EDIT = "e"
+
+
+def _btn(text: str, a: str, v: str = "", d: str = "") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=SCb(a=a, v=v, d=d).pack())
 
 
 def category_key(name: str) -> str:
     return hashlib.sha1(name.encode()).hexdigest()[:8]
+
+
+# ---------- draft access (search draft or monitoring edit draft) ----------
+
+
+async def load_params(session: AsyncSession, user: User, d: str) -> dict | None:
+    """Current params of the draft; None when an edit draft no longer exists."""
+    if d == EDIT:
+        draft = await mon_svc.get_edit(session, user.id)
+        return None if draft is None else normalize(draft.params)
+    return await search_svc.get_draft(session, user.id)
+
+
+async def change_params(session: AsyncSession, user: User, d: str, **changes) -> dict | None:
+    if d == EDIT:
+        if await mon_svc.get_edit(session, user.id) is None:
+            return None
+        return await mon_svc.update_edit(session, user.id, **changes)
+    return await search_svc.update_draft(session, user.id, **changes)
+
+
+async def home_screen(
+    session: AsyncSession, user: User, d: str, params: dict | None = None
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    if d == EDIT:
+        draft = await mon_svc.get_edit(session, user.id)
+        if draft is None:
+            return None
+        return render_edit_screen(draft.name, normalize(draft.params))
+    if params is None:
+        params = await search_svc.get_draft(session, user.id)
+    return render_screen(params)
 
 
 # ---------- rendering ----------
@@ -95,7 +139,28 @@ def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def render_grid(params: dict) -> tuple[str, InlineKeyboardMarkup]:
+def render_edit_screen(name: str, params: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Monitoring edit "home": name + current filters, explicit save."""
+    summary = summary_lines(params)
+    lines = [t.MON_EDIT_TITLE, "", t.MON_NAME_LINE.format(name=html.escape(name)), ""]
+    if summary:
+        lines.append("<b>Параметри:</b>")
+        lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    else:
+        lines.append(t.MON_EDIT_NO_PARAMS)
+    lines += ["", t.MON_EDIT_HINT]
+    rows = [
+        [InlineKeyboardButton(text=t.BTN_SAVE_CHANGES, callback_data=MCb(a="save").pack())],
+        [_btn(t.BTN_EDIT_PARAMS, "grid", d=EDIT)],
+        [InlineKeyboardButton(text=t.BTN_RENAME, callback_data=MCb(a="rename").pack())],
+        [InlineKeyboardButton(text=t.BTN_CANCEL_EDIT, callback_data=MCb(a="cancel").pack())],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_grid(
+    params: dict, d: str = "", name: str | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
     """Parameter grid: ✅ marks parameters that are already chosen."""
     p = normalize(params)
 
@@ -104,24 +169,28 @@ def render_grid(params: dict) -> tuple[str, InlineKeyboardMarkup]:
 
     rows = [
         [
-            _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal"),
-            _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type"),
+            _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal", d=d),
+            _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type", d=d),
         ],
         [
-            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0"),
-            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg"),
+            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0", d=d),
+            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg", d=d),
         ],
         [
-            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city"),
-            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords"),
+            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city", d=d),
+            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords", d=d),
         ],
         [
-            _btn(mark(t.BTN_P_ORGANIZER, "customer_name" in p), "txt", "customer_name"),
-            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price"),
+            _btn(mark(t.BTN_P_ORGANIZER, "customer_name" in p), "txt", "customer_name", d=d),
+            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price", d=d),
         ],
-        [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area")],
+        [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area", d=d)],
     ]
-    if summary_lines(p):
+    if d == EDIT:
+        title = t.MON_EDIT_TITLE + (f" «{html.escape(name)}»" if name else "")
+        text = f"{title}\n\n{t.CHOOSE_PARAM}"
+        rows.append([_btn(t.BTN_BACK, "open", d=d)])
+    elif summary_lines(p):
         text = f"{t.SEARCH_TITLE}\n\n{t.CHOOSE_PARAM}"
         rows.append([_btn(t.BTN_BACK, "open")])
     else:
@@ -130,57 +199,61 @@ def render_grid(params: dict) -> tuple[str, InlineKeyboardMarkup]:
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def back_row(clear_target: str | None = None) -> list[InlineKeyboardButton]:
+def back_row(clear_target: str | None = None, d: str = "") -> list[InlineKeyboardButton]:
     """Bottom row of every parameter screen: [🗑 Очистити] (only when the
     parameter is set) on the left, [◀️ Назад] (to the grid) on the right."""
-    row = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)] if clear_target else []
-    row.append(_btn(t.BTN_BACK, "grid"))
+    row = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target, d=d)] if clear_target else []
+    row.append(_btn(t.BTN_BACK, "grid", d=d))
     return row
 
 
-def input_keyboard(skip: bool = False, clear_target: str | None = None) -> InlineKeyboardMarkup:
+def input_keyboard(
+    skip: bool = False, clear_target: str | None = None, d: str = ""
+) -> InlineKeyboardMarkup:
     rows = []
     if skip:
-        rows.append([_btn(t.BTN_SKIP, "skip")])
-    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target)] if clear_target else []
-    bottom.append(_btn(t.BTN_CANCEL, "cancel"))
+        rows.append([_btn(t.BTN_SKIP, "skip", d=d)])
+    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target, d=d)] if clear_target else []
+    bottom.append(_btn(t.BTN_CANCEL, "cancel", d=d))
     rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def regions_keyboard(selected: list[str]) -> InlineKeyboardMarkup:
+def regions_keyboard(selected: list[str], d: str = "") -> InlineKeyboardMarkup:
     chosen = set(selected)
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for i, name in enumerate(REGIONS):
         label = f"✅ {name}" if name in chosen else name
-        row.append(_btn(label, "regt", str(i)))
+        row.append(_btn(label, "regt", str(i), d=d))
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", "regions")] if chosen else []
-    bottom.append(_btn(t.BTN_DONE, "open"))
+    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", "regions", d=d)] if chosen else []
+    bottom.append(_btn(t.BTN_DONE, "open", d=d))
     rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def categories_keyboard(names: list[str], page: int, current: str | None) -> InlineKeyboardMarkup:
+def categories_keyboard(
+    names: list[str], page: int, current: str | None, d: str = ""
+) -> InlineKeyboardMarkup:
     pages = max(1, -(-len(names) // CATEGORIES_PER_PAGE))
     page = min(max(page, 0), pages - 1)
     chunk = names[page * CATEGORIES_PER_PAGE : (page + 1) * CATEGORIES_PER_PAGE]
-    rows = [[_btn(f"✅ {n}" if n == current else n, "catset", category_key(n))] for n in chunk]
+    rows = [[_btn(f"✅ {n}" if n == current else n, "catset", category_key(n), d=d)] for n in chunk]
     nav = []
     if page > 0:
-        nav.append(_btn("⬅️", "cat", str(page - 1)))
+        nav.append(_btn("⬅️", "cat", str(page - 1), d=d))
     if pages > 1:
-        nav.append(_btn(f"{page + 1}/{pages}", "cat", str(page)))
+        nav.append(_btn(f"{page + 1}/{pages}", "cat", str(page), d=d))
     if page < pages - 1:
-        nav.append(_btn("➡️", "cat", str(page + 1)))
+        nav.append(_btn("➡️", "cat", str(page + 1), d=d))
     if nav:
         rows.append(nav)
-    rows.append(back_row("category" if current else None))
+    rows.append(back_row("category" if current else None, d=d))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -211,6 +284,20 @@ def create_router() -> Router:
     router.message.filter(filters.registered)
     router.callback_query.filter(filters.registered)
 
+    async def stale(callback: CallbackQuery) -> None:
+        await callback.answer(t.STALE_ACTION, show_alert=True)
+
+    async def show_home(
+        callback: CallbackQuery, session: AsyncSession, user: User, d: str, prefix: str = ""
+    ) -> None:
+        screen = await home_screen(session, user, d)
+        if screen is None:
+            await stale(callback)
+            return
+        text, markup = screen
+        await edit_or_send(callback, f"{prefix}{text}", markup)
+        await callback.answer()
+
     @router.message(F.text == t.BTN_SEARCH)
     async def on_open_from_menu(
         message: Message, state: FSMContext, session: AsyncSession, user: User
@@ -222,21 +309,37 @@ def create_router() -> Router:
 
     @router.callback_query(SCb.filter(F.a == "open"))
     async def on_open(
-        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
+        callback: CallbackQuery,
+        callback_data: SCb,
+        state: FSMContext,
+        session: AsyncSession,
+        user: User,
     ) -> None:
         await state.clear()
-        params = await search_svc.get_draft(session, user.id)
-        await edit_or_send(callback, *render_screen(params))
+        await show_home(callback, session, user, callback_data.d)
+
+    async def show_grid(callback: CallbackQuery, session: AsyncSession, user: User, d: str) -> None:
+        if d == EDIT:
+            draft = await mon_svc.get_edit(session, user.id)
+            if draft is None:
+                await stale(callback)
+                return
+            screen = render_grid(draft.params, d, draft.name)
+        else:
+            screen = render_grid(await search_svc.get_draft(session, user.id))
+        await edit_or_send(callback, *screen)
         await callback.answer()
 
-    @router.callback_query(SCb.filter(F.a == "cancel"))
-    async def on_cancel(
-        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
+    @router.callback_query(SCb.filter(F.a.in_({"grid", "cancel"})))
+    async def on_grid(
+        callback: CallbackQuery,
+        callback_data: SCb,
+        state: FSMContext,
+        session: AsyncSession,
+        user: User,
     ) -> None:
         await state.clear()
-        params = await search_svc.get_draft(session, user.id)
-        await edit_or_send(callback, *render_grid(params))
-        await callback.answer()
+        await show_grid(callback, session, user, callback_data.d)
 
     @router.callback_query(SCb.filter(F.a == "menu"))
     async def on_menu(callback: CallbackQuery, state: FSMContext, roles: set[str]) -> None:
@@ -246,28 +349,24 @@ def create_router() -> Router:
             callback.from_user.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles)
         )
 
-    @router.callback_query(SCb.filter(F.a == "grid"))
-    async def on_grid(
-        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
-    ) -> None:
-        await state.clear()
-        params = await search_svc.get_draft(session, user.id)
-        await edit_or_send(callback, *render_grid(params))
-        await callback.answer()
-
     # --- single choice: deal type and auction type ---
     @router.callback_query(SCb.filter(F.a.in_({"deal", "type"})))
     async def on_choice(
         callback: CallbackQuery, callback_data: SCb, session: AsyncSession, user: User
     ) -> None:
+        d = callback_data.d
+        params = await load_params(session, user, d)
+        if params is None:
+            await stale(callback)
+            return
         field = "auction_type" if callback_data.a == "deal" else "start_price_type"
         title = t.CHOOSE_DEAL if field == "auction_type" else t.CHOOSE_TYPE
-        current = (await search_svc.get_draft(session, user.id)).get(field)
+        current = params.get(field)
         rows = [
-            [_btn(f"✅ {label}" if code == current else label, "set", f"{field}={code}")]
+            [_btn(f"✅ {label}" if code == current else label, "set", f"{field}={code}", d=d)]
             for code, label in SINGLE_CHOICE[field].items()
         ]
-        rows.append(back_row(field if current else None))
+        rows.append(back_row(field if current else None, d=d))
         await edit_or_send(callback, title, InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
 
@@ -279,9 +378,10 @@ def create_router() -> Router:
         if field not in SINGLE_CHOICE or (value and value not in SINGLE_CHOICE[field]):
             await callback.answer(t.STALE_ACTION)
             return
-        params = await search_svc.update_draft(session, user.id, **{field: value or None})
-        await edit_or_send(callback, *render_screen(params))
-        await callback.answer()
+        if await change_params(session, user, callback_data.d, **{field: value or None}) is None:
+            await stale(callback)
+            return
+        await show_home(callback, session, user, callback_data.d)
 
     # --- category ---
     @router.callback_query(SCb.filter(F.a == "cat"))
@@ -292,15 +392,19 @@ def create_router() -> Router:
         user: User,
         tender: TenderClient,
     ) -> None:
+        params = await load_params(session, user, callback_data.d)
+        if params is None:
+            await stale(callback)
+            return
         try:
             names = await tender.get_categories()
         except TenderError:
             log.exception("Failed to load categories")
             await callback.answer(t.CATEGORIES_UNAVAILABLE, show_alert=True)
             return
-        current = (await search_svc.get_draft(session, user.id)).get("category")
         page = int(callback_data.v or 0) if callback_data.v.isdigit() else 0
-        await edit_or_send(callback, t.CHOOSE_CATEGORY, categories_keyboard(names, page, current))
+        markup = categories_keyboard(names, page, params.get("category"), d=callback_data.d)
+        await edit_or_send(callback, t.CHOOSE_CATEGORY, markup)
         await callback.answer()
 
     @router.callback_query(SCb.filter(F.a == "catset"))
@@ -323,15 +427,22 @@ def create_router() -> Router:
                 await callback.answer(t.STALE_ACTION)
                 return
             value = matches[0]
-        params = await search_svc.update_draft(session, user.id, category=value)
-        await edit_or_send(callback, *render_screen(params))
-        await callback.answer()
+        if await change_params(session, user, callback_data.d, category=value) is None:
+            await stale(callback)
+            return
+        await show_home(callback, session, user, callback_data.d)
 
     # --- regions (multi-select) ---
     @router.callback_query(SCb.filter(F.a == "reg"))
-    async def on_regions(callback: CallbackQuery, session: AsyncSession, user: User) -> None:
-        selected = (await search_svc.get_draft(session, user.id)).get("regions") or []
-        await edit_or_send(callback, t.CHOOSE_REGIONS, regions_keyboard(selected))
+    async def on_regions(
+        callback: CallbackQuery, callback_data: SCb, session: AsyncSession, user: User
+    ) -> None:
+        params = await load_params(session, user, callback_data.d)
+        if params is None:
+            await stale(callback)
+            return
+        markup = regions_keyboard(params.get("regions") or [], d=callback_data.d)
+        await edit_or_send(callback, t.CHOOSE_REGIONS, markup)
         await callback.answer()
 
     @router.callback_query(SCb.filter(F.a == "regt"))
@@ -341,15 +452,24 @@ def create_router() -> Router:
         if not callback_data.v.isdigit() or int(callback_data.v) >= len(REGIONS):
             await callback.answer(t.STALE_ACTION)
             return
+        d = callback_data.d
         region = REGIONS[int(callback_data.v)]
-        draft = await search_svc.get_draft(session, user.id, lock=True)
-        selected = list(draft.get("regions") or [])
+        if d == EDIT:
+            draft = await mon_svc.get_edit(session, user.id, lock=True)
+            current = None if draft is None else draft.params
+        else:
+            current = await search_svc.get_draft(session, user.id, lock=True)
+        if current is None:
+            await stale(callback)
+            return
+        selected = list(current.get("regions") or [])
         if region in selected:
             selected.remove(region)
         else:
             selected.append(region)
-        params = await search_svc.update_draft(session, user.id, regions=selected or None)
-        await edit_or_send(callback, t.CHOOSE_REGIONS, regions_keyboard(params.get("regions", [])))
+        params = await change_params(session, user, d, regions=selected or None) or {}
+        markup = regions_keyboard(params.get("regions", []), d=d)
+        await edit_or_send(callback, t.CHOOSE_REGIONS, markup)
         await callback.answer()
 
     # --- free-text fields ---
@@ -365,33 +485,46 @@ def create_router() -> Router:
         if field not in TEXT_PROMPTS:
             await callback.answer(t.STALE_ACTION)
             return
-        current = (await search_svc.get_draft(session, user.id)).get(field)
+        params = await load_params(session, user, callback_data.d)
+        if params is None:
+            await stale(callback)
+            return
+        current = params.get(field)
         await state.set_state(SearchInput.text)
-        await state.set_data({"field": field})
+        await state.set_data({"field": field, "d": callback_data.d})
         prompt = TEXT_PROMPTS[field]
         if current:
             prompt += f"\n\nЗараз: <b>{html.escape(current)}</b>"
-        await edit_or_send(
-            callback, prompt, input_keyboard(clear_target=field if current else None)
-        )
+        markup = input_keyboard(clear_target=field if current else None, d=callback_data.d)
+        await edit_or_send(callback, prompt, markup)
         await callback.answer()
+
+    async def send_home(
+        message: Message, session: AsyncSession, user: User, d: str, prefix: str = ""
+    ) -> None:
+        screen = await home_screen(session, user, d)
+        if screen is None:
+            await message.answer(t.STALE_ACTION)
+            return
+        text, markup = screen
+        await message.answer(f"{prefix}{text}", reply_markup=markup)
 
     @router.message(SearchInput.text, F.text)
     async def on_text_input(
         message: Message, state: FSMContext, session: AsyncSession, user: User
     ) -> None:
         data = await state.get_data()
-        field = data.get("field")
+        field, d = data.get("field"), data.get("d", "")
         value = (message.text or "").strip()
         if field not in TEXT_PROMPTS:
             await state.clear()
             return
         if not value or value.startswith("/") or len(value) > MAX_TEXT_LEN:
-            await message.answer(t.BAD_TEXT, reply_markup=input_keyboard())
+            await message.answer(t.BAD_TEXT, reply_markup=input_keyboard(d=d))
             return
-        params = await search_svc.update_draft(session, user.id, **{field: value})
         await state.clear()
-        await send_screen(message.bot, message.chat.id, params)
+        await change_params(session, user, d, **{field: value})
+        await send_home(message, session, user, d)
 
     @router.callback_query(SCb.filter(F.a == "fclr"))
     async def on_field_clear(
@@ -412,34 +545,46 @@ def create_router() -> Router:
         else:
             await callback.answer(t.STALE_ACTION)
             return
-        params = await search_svc.update_draft(session, user.id, **changes)
-        await edit_or_send(callback, *render_screen(params))
-        await callback.answer()
+        if await change_params(session, user, callback_data.d, **changes) is None:
+            await stale(callback)
+            return
+        await show_home(callback, session, user, callback_data.d)
 
     # --- price / area ranges ---
     @router.callback_query(SCb.filter(F.a == "price"))
     async def on_price(
-        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
+        callback: CallbackQuery,
+        callback_data: SCb,
+        state: FSMContext,
+        session: AsyncSession,
+        user: User,
     ) -> None:
-        p = normalize(await search_svc.get_draft(session, user.id))
+        d = callback_data.d
+        p = await load_params(session, user, d)
+        if p is None:
+            await stale(callback)
+            return
         await state.set_state(SearchInput.min_value)
-        await state.set_data({"range": "price"})
+        await state.set_data({"range": "price", "d": d})
         has = "min_price" in p or "max_price" in p
-        await edit_or_send(
-            callback,
-            t.PROMPT_MIN_PRICE,
-            input_keyboard(skip=True, clear_target="price" if has else None),
-        )
+        markup = input_keyboard(skip=True, clear_target="price" if has else None, d=d)
+        await edit_or_send(callback, t.PROMPT_MIN_PRICE, markup)
         await callback.answer()
 
     @router.callback_query(SCb.filter(F.a == "area"))
-    async def on_area(callback: CallbackQuery, session: AsyncSession, user: User) -> None:
-        p = normalize(await search_svc.get_draft(session, user.id))
+    async def on_area(
+        callback: CallbackQuery, callback_data: SCb, session: AsyncSession, user: User
+    ) -> None:
+        d = callback_data.d
+        p = await load_params(session, user, d)
+        if p is None:
+            await stale(callback)
+            return
         rows = [
-            [_btn(f"{label}", "unit", code)]
+            [_btn(f"{label}", "unit", code, d=d)]
             for code, label in (("ha.", "Гектари (га)"), ("sq.m.", "Квадратні метри (м²)"))
         ]
-        rows.append(back_row("area" if "area_unit" in p else None))
+        rows.append(back_row("area" if "area_unit" in p else None, d=d))
         await edit_or_send(callback, t.CHOOSE_AREA_UNIT, InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
 
@@ -448,10 +593,12 @@ def create_router() -> Router:
         if callback_data.v not in AREA_UNITS:
             await callback.answer(t.STALE_ACTION)
             return
+        d = callback_data.d
         await state.set_state(SearchInput.min_value)
-        await state.set_data({"range": "area", "unit": callback_data.v})
+        await state.set_data({"range": "area", "unit": callback_data.v, "d": d})
         unit = AREA_UNITS[callback_data.v]
-        await edit_or_send(callback, t.PROMPT_MIN_AREA.format(unit=unit), input_keyboard(skip=True))
+        markup = input_keyboard(skip=True, d=d)
+        await edit_or_send(callback, t.PROMPT_MIN_AREA.format(unit=unit), markup)
         await callback.answer()
 
     async def _after_min(
@@ -469,10 +616,11 @@ def create_router() -> Router:
             prompt = t.PROMPT_MAX_PRICE
         else:
             prompt = t.PROMPT_MAX_AREA.format(unit=AREA_UNITS[data["unit"]])
+        markup = input_keyboard(skip=True, d=data.get("d", ""))
         if edit is not None:
-            await edit_or_send(edit, prompt, input_keyboard(skip=True))
+            await edit_or_send(edit, prompt, markup)
         else:
-            await bot.send_message(chat_id, prompt, reply_markup=input_keyboard(skip=True))
+            await bot.send_message(chat_id, prompt, reply_markup=markup)
 
     async def _finish_range(
         bot: Bot,
@@ -484,7 +632,7 @@ def create_router() -> Router:
         edit: CallbackQuery | None = None,
     ) -> None:
         data = await state.get_data()
-        min_value = data.get("min")
+        min_value, d = data.get("min"), data.get("d", "")
         await state.clear()
         if data["range"] == "price":
             changes = {"min_price": min_value, "max_price": max_value}
@@ -492,8 +640,12 @@ def create_router() -> Router:
             changes = {"area_unit": data["unit"], "min_area": min_value, "max_area": max_value}
             if min_value is None and max_value is None:
                 changes["area_unit"] = None
-        params = await search_svc.update_draft(session, user.id, **changes)
-        text, markup = render_screen(params)
+        await change_params(session, user, d, **changes)
+        screen = await home_screen(session, user, d)
+        if screen is None:
+            await bot.send_message(chat_id, t.STALE_ACTION)
+            return
+        text, markup = screen
         if min_value is None and max_value is None:
             text = f"{t.RANGE_NOT_SET}\n\n{text}"
         if edit is not None:
@@ -503,10 +655,11 @@ def create_router() -> Router:
 
     @router.message(SearchInput.min_value, F.text)
     async def on_min_input(message: Message, state: FSMContext) -> None:
+        d = (await state.get_data()).get("d", "")
         try:
             value = parse_number(message.text or "")
         except ValueError:
-            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True))
+            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True, d=d))
             return
         await _after_min(message.bot, message.chat.id, state, str(value))
 
@@ -514,23 +667,29 @@ def create_router() -> Router:
     async def on_max_input(
         message: Message, state: FSMContext, session: AsyncSession, user: User
     ) -> None:
+        data = await state.get_data()
+        d = data.get("d", "")
         try:
             value = parse_number(message.text or "")
         except ValueError:
-            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True))
+            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True, d=d))
             return
-        min_value = (await state.get_data()).get("min")
+        min_value = data.get("min")
         if min_value is not None and value < Decimal(min_value):
             await message.answer(
                 t.BAD_RANGE.format(min=format_number(min_value)),
-                reply_markup=input_keyboard(skip=True),
+                reply_markup=input_keyboard(skip=True, d=d),
             )
             return
         await _finish_range(message.bot, message.chat.id, state, session, user, str(value))
 
     @router.callback_query(SCb.filter(F.a == "skip"))
     async def on_skip(
-        callback: CallbackQuery, state: FSMContext, session: AsyncSession, user: User
+        callback: CallbackQuery,
+        callback_data: SCb,
+        state: FSMContext,
+        session: AsyncSession,
+        user: User,
     ) -> None:
         current = await state.get_state()
         if current == SearchInput.min_value.state:
@@ -540,11 +699,11 @@ def create_router() -> Router:
                 callback.bot, callback.from_user.id, state, session, user, None, edit=callback
             )
         else:
-            params = await search_svc.get_draft(session, user.id)
-            await edit_or_send(callback, *render_screen(params))
+            await show_home(callback, session, user, callback_data.d)
+            return
         await callback.answer()
 
-    # --- clear all ---
+    # --- clear all (search draft only) ---
     @router.callback_query(SCb.filter(F.a == "clear"))
     async def on_clear(callback: CallbackQuery) -> None:
         markup = InlineKeyboardMarkup(

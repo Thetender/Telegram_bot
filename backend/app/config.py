@@ -55,6 +55,10 @@ class Settings(BaseModel):
 
     log_level: str = "INFO"
 
+    # Background delivery of new-auction notifications (off in unit tests,
+    # which drive the worker step by step).
+    delivery_worker_enabled: bool = True
+
     @field_validator("public_base_url")
     @classmethod
     def _strip_slash(cls, v: str | None) -> str | None:

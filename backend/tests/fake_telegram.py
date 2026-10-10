@@ -27,6 +27,8 @@ class FakeSession(BaseSession):
         self._ids = itertools.count(1000)
         # Chats that "blocked the bot": sending there raises TelegramForbiddenError.
         self.fail_chats: set[int] = set()
+        # Exceptions raised by the next SendMessage calls, in order (e.g. 429).
+        self.raise_next: list[Exception] = []
 
     async def make_request(self, bot: Bot, method: TelegramMethod[Any], timeout: int | None = None):
         chat = getattr(method, "chat_id", None)
@@ -34,6 +36,8 @@ class FakeSession(BaseSession):
             raise TelegramForbiddenError(
                 method=method, message="Forbidden: bot was blocked by the user"
             )
+        if isinstance(method, SendMessage) and self.raise_next:
+            raise self.raise_next.pop(0)
         self.requests.append(method)
         if isinstance(method, GetMe):
             return TgUser(id=BOT_ID, is_bot=True, first_name="Test bot", username="TgtestTT_bot")

@@ -27,7 +27,7 @@
     <dl class="kv">
       <dt>Пошуків</dt><dd>{{ p.searches }}</dd>
       <dt>Консультацій</dt><dd>{{ p.consultations|length }}</dd>
-      <dt>Моніторингів</dt><dd class="muted">— (Iteration 5)</dd>
+      <dt>Моніторингів</dt><dd>{{ p.monitorings|length }}</dd>
     </dl>
     <div style="margin-top:14px" class="row-actions">
       <form class="inline" method="post" action="/admin/users/{{ p.user.id }}/manager">
@@ -61,6 +61,16 @@
     <p class="muted" style="margin-bottom:0">Користувач один раз отримає повідомлення «Доступ до бота обмежено» з телефоном компанії, далі бот на нього не реагує. Блокується і номер телефону — новий Telegram-акаунт з ним теж не отримає доступу.</p>
   {% endif %}
 </div>
+{% if p.monitorings %}
+<h2>Моніторинги</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Назва</th><th>Параметри</th><th>Створено</th></tr></thead>
+  <tbody>{% for m in p.monitorings %}
+    <tr><td>{{ m.name }}</td>
+      <td>{% for label, value in summary(m.params) %}<span class="muted">{{ label }}:</span> {{ value }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>{{ fmt_dt(m.created_at) }}</td></tr>
+  {% endfor %}</tbody></table></div>
+{% endif %}
 {% if p.consultations %}
 <h2>Консультації</h2>
 <div class="table-wrap"><table>
@@ -79,6 +89,7 @@
       <span>{{ event_labels.get(e.event_type, e.event_type) }}
         {% if e.event_data.get('items_count') is not none %}<span class="muted">· знайдено {{ e.event_data['items_count'] }}</span>{% endif %}
         {% if e.event_data.get('role') %}<span class="muted">· {{ e.event_data['role'] }}</span>{% endif %}
+        {% if e.event_data.get('monitoring') %}<span class="muted">· {{ e.event_data['monitoring'] }}</span>{% endif %}
         {% if e.event_data.get('request_id') %}<span class="muted">· заявка №{{ e.event_data['request_id'] }}</span>{% endif %}
         {% if e.actor_user_id and e.actor_user_id != p.user.id %}<span class="muted">· {{ p.actors[e.actor_user_id].name if e.actor_user_id in p.actors else 'адміністратор' }}</span>{% endif %}
       </span></li>

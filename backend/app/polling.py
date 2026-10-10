@@ -15,6 +15,7 @@ from app.bot.factory import configure_bot, create_bot, create_dispatcher
 from app.config import get_settings
 from app.db import make_engine, make_session_factory
 from app.logging_setup import setup_logging
+from app.workers.delivery import DeliveryWorker
 
 log = logging.getLogger(__name__)
 
@@ -30,10 +31,14 @@ async def main() -> None:
     dp = create_dispatcher(settings, sf)
     await bot.delete_webhook(drop_pending_updates=False)
     await configure_bot(bot)
+    worker = DeliveryWorker(bot, sf, settings)
+    if settings.delivery_worker_enabled:
+        worker.start()
     log.info("Starting long polling")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        await worker.stop()
         await engine.dispose()
 
 

@@ -20,11 +20,60 @@ DEFAULT_PAGESIZE = 50
 
 
 class TenderError(Exception):
-    """API failure. kind: auth | not_found | validation | unavailable | bad_response."""
+    """API failure. kind: auth | not_found | validation | unavailable | bad_response |
+    ambiguous (a non-idempotent call may or may not have been applied)."""
 
-    def __init__(self, kind: str, message: str = "") -> None:
+    def __init__(self, kind: str, message: str = "", errors: list[str] | None = None) -> None:
         super().__init__(f"{kind}: {message}" if message else kind)
         self.kind = kind
+        self.errors = errors or []
+
+
+@dataclass(frozen=True)
+class ExternalMonitoring:
+    """A monitoring as stored by The Tender."""
+
+    id: str
+    name: str
+    params: dict[str, Any]
+    raw: dict[str, Any]
+
+
+def parse_monitoring(d: Any) -> ExternalMonitoring:
+    from app.services.search_params import from_api
+
+    if not isinstance(d, dict) or d.get("id") in (None, ""):
+        raise TenderError("bad_response", "monitoring without id")
+    body = d.get("monitoring") if isinstance(d.get("monitoring"), dict) else d
+    return ExternalMonitoring(
+        id=str(d["id"]),
+        name=str(body.get("name") or "").strip() or "Моніторинг",
+        params=from_api(body),
+        raw=d,
+    )
+
+
+def parse_monitoring_list(payload: Any) -> list[ExternalMonitoring]:
+    if isinstance(payload, dict):
+        for key in ("data", "monitorings", "items"):
+            if key in payload:
+                return parse_monitoring_list(payload[key])
+        raise TenderError("bad_response", "unexpected monitoring list object")
+    if not isinstance(payload, list):
+        raise TenderError("bad_response", "monitoring list is not a list")
+    return [parse_monitoring(d) for d in payload if isinstance(d, dict)]
+
+
+def parse_saved(payload: Any) -> ExternalMonitoring:
+    """Create/update response: {saved, errors, data}."""
+    if not isinstance(payload, dict):
+        raise TenderError("bad_response", "unexpected save response")
+    if not payload.get("saved"):
+        errors = [str(e) for e in (payload.get("errors") or [])]
+        if isinstance(payload.get("errors"), dict):
+            errors = [str(v) for v in payload["errors"].values()]
+        raise TenderError("validation", "; ".join(errors) or "not saved", errors=errors)
+    return parse_monitoring(payload.get("data"))
 
 
 @dataclass(frozen=True)
@@ -74,6 +123,18 @@ class TenderClient(Protocol):
     async def search_auctions(
         self, params: dict[str, str], page: int = 1, pagesize: int = DEFAULT_PAGESIZE
     ) -> AuctionPage: ...
+
+    async def list_monitorings(self, user_id: str) -> list[ExternalMonitoring]: ...
+
+    async def create_monitoring(
+        self, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring: ...
+
+    async def update_monitoring(
+        self, monitoring_id: str, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring: ...
+
+    async def delete_monitoring(self, monitoring_id: str) -> None: ...
 
     async def aclose(self) -> None: ...
 
@@ -139,14 +200,28 @@ class HttpTenderClient:
         return self._client
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return await self._request("GET", path, params=params)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        json: Any = None,
+        retry: bool = True,
+    ) -> Any:
+        """retry=False for non-idempotent calls (monitoring create): a network
+        error or 5xx then raises 'ambiguous' instead of repeating the call."""
+        attempts = self.retries + 1 if retry else 1
         last_exc: Exception | None = None
-        for attempt in range(self.retries + 1):
+        for attempt in range(attempts):
             try:
-                resp = await self._http().get(path, params=params)
+                resp = await self._http().request(method, path, params=params, json=json)
             except httpx.HTTPError as exc:
                 last_exc = exc
                 log.warning(
-                    "The Tender GET %s network error (attempt %s): %s",
+                    "The Tender %s %s network error (attempt %s): %s",
+                    method,
                     path,
                     attempt + 1,
                     type(exc).__name__,
@@ -161,16 +236,21 @@ class HttpTenderClient:
                 if resp.status_code >= 500:
                     last_exc = TenderError("unavailable", f"HTTP {resp.status_code}")
                     log.warning(
-                        "The Tender GET %s -> %s (attempt %s)", path, resp.status_code, attempt + 1
+                        "The Tender %s %s -> %s (attempt %s)",
+                        method,
+                        path,
+                        resp.status_code,
+                        attempt + 1,
                     )
                 else:
                     try:
                         return resp.json()
                     except ValueError as exc:
                         raise TenderError("bad_response", "invalid JSON") from exc
-            if attempt < self.retries:
+            if attempt < attempts - 1:
                 await asyncio.sleep(0.5 * (attempt + 1))
-        raise TenderError("unavailable", str(last_exc) if last_exc else "")
+        kind = "unavailable" if retry else "ambiguous"
+        raise TenderError(kind, str(last_exc) if last_exc else "")
 
     async def get_categories(self) -> list[str]:
         now = time.monotonic()
@@ -185,6 +265,36 @@ class HttpTenderClient:
     ) -> AuctionPage:
         query = {**params, "page": page, "pagesize": pagesize}
         return parse_page(await self._get("/rest/auctions", query), page)
+
+    async def list_monitorings(self, user_id: str) -> list[ExternalMonitoring]:
+        return parse_monitoring_list(await self._get("/rest/monitoring", {"user_id": user_id}))
+
+    async def create_monitoring(
+        self, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring:
+        from app.services.search_params import to_monitoring_body
+
+        body = {"user_id": user_id, "name": name, **to_monitoring_body(params)}
+        payload = await self._request("POST", "/rest/monitoring/create", json=body, retry=False)
+        return parse_saved(payload)
+
+    async def update_monitoring(
+        self, monitoring_id: str, user_id: str, name: str, params: dict[str, Any]
+    ) -> ExternalMonitoring:
+        from app.services.search_params import to_monitoring_body
+
+        body = {"user_id": user_id, "name": name, **to_monitoring_body(params)}
+        payload = await self._request(
+            "PUT", "/rest/monitoring/update", params={"id": monitoring_id}, json=body
+        )
+        return parse_saved(payload)
+
+    async def delete_monitoring(self, monitoring_id: str) -> None:
+        payload = await self._request(
+            "DELETE", "/rest/monitoring/delete", params={"id": monitoring_id}
+        )
+        if isinstance(payload, dict) and payload.get("deleted") is False:
+            raise TenderError("validation", "not deleted")
 
     async def aclose(self) -> None:
         if self._client is not None:

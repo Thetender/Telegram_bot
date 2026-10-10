@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # Callbacks still available while new Terms/Privacy wait for confirmation:
 # accept, marketing preference and the personal-data deletion request.
-_GATE_ALLOWED_CALLBACKS = ("lg:", "mk:", "pd:", "h:settings", "h:delete")
+_GATE_ALLOWED_CALLBACKS = ("lg:", "mk:", "mu:", "pd:", "h:settings", "h:delete")
 
 
 def _allowed_during_legal_gate(event: Update) -> bool:

@@ -180,6 +180,13 @@ async def monitoring_counts(session: AsyncSession, user_ids: list[int]) -> dict[
     return {uid: count for uid, count in rows}
 
 
+async def pending_invitation_user_ids(session: AsyncSession) -> set[int]:
+    rows = await session.scalars(
+        select(AdminInvitation.invited_user_id).where(AdminInvitation.status == "PENDING")
+    )
+    return set(rows)
+
+
 async def roles_for(session: AsyncSession, user_ids: list[int]) -> dict[int, set[str]]:
     if not user_ids:
         return {}

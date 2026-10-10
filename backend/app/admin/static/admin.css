@@ -93,3 +93,9 @@ dl.kv dd { margin: 0; }
 }
 
 .filters label.check { flex-direction: row; align-items: center; gap: 6px; }
+textarea { font: inherit; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; }
+.tg-preview { background: #eef3f8; border-radius: 12px; padding: 12px 14px; max-width: 420px; white-space: normal; word-wrap: break-word; }
+.tg-preview .tg-button { margin-top: 8px; background: #fff; border-radius: 8px; padding: 7px; text-align: center; font-size: 14px; color: var(--brand); }
+.tg-preview .spoiler { background: #c7cbd1; color: transparent; border-radius: 3px; }
+.tg-preview blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--brand); }
+button[disabled] { opacity: .5; cursor: not-allowed; }

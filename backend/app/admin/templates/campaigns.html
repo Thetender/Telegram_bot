@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Розсилки{% endblock %}
 {% block content %}
-<h1>📣 Розсилки</h1>
-<div class="notice">Розсилки з'являться в Iteration 7: вибір аудиторії, попередній перегляд, підтвердження, надсилання з урахуванням лімітів Telegram і статистика кліків.</div>
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+  <h1>📣 Розсилки</h1>
+  <form method="post" action="/admin/campaigns/new">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">+ Нова розсилка</button>
+  </form>
+</div>
+<p class="muted">Рекламні повідомлення користувачам бота. Ті, хто відписався від розсилок, заблокував бота або заблокований адміністратором, їх не отримують. Сповіщення за моніторингами мають пріоритет і надсилаються першими.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Назва</th><th>Статус</th><th>Аудиторія</th><th>Надіслано</th><th>Не доставлено / пропущено</th><th>Переходи</th><th>Створено</th></tr></thead>
+  <tbody>
+  {% for c in rows %}{% set p = stats[c.id] %}
+    <tr>
+      <td><a href="/admin/campaigns/{{ c.id }}">{{ c.title }}</a></td>
+      <td>{% if c.status == 'DRAFT' %}<span class="badge CLOSED_BY_ADMIN">Чернетка</span>
+          {% elif c.status == 'SENDING' %}<span class="badge IN_PROGRESS">Надсилається</span>
+          {% else %}<span class="badge COMPLETED">Надіслано</span>{% endif %}</td>
+      <td>{{ c.recipients_count if c.status != 'DRAFT' else '—' }}</td>
+      <td>{{ p.sent if c.status != 'DRAFT' else '—' }}</td>
+      <td>{{ (p.failed ~ ' / ' ~ p.skipped) if c.status != 'DRAFT' else '—' }}</td>
+      <td>{{ p.clicked if c.status != 'DRAFT' else '—' }}</td>
+      <td>{{ fmt_dt(c.created_at) }}</td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="muted">Розсилок ще немає.</td></tr>{% endfor %}
+  </tbody></table></div>
 {% endblock %}

@@ -16,6 +16,7 @@ from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import User
+from app.services import campaigns as campaigns_svc
 from app.services import legal, privacy
 from app.services import users as users_svc
 
@@ -28,9 +29,7 @@ STATIC_SECTIONS = {
 }
 
 
-async def show(
-    callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup | None
-) -> None:
+async def show(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup | None) -> None:
     """Edit the callback's message in place; fall back to a new message."""
     msg = callback.message
     if isinstance(msg, Message):
@@ -73,8 +72,15 @@ def create_router() -> Router:
         session: AsyncSession,
         user: User,
         settings: Settings,
+        roles: set[str],
     ) -> None:
         section = callback_data.section
+        if section == "home":
+            await callback.answer()
+            await callback.bot.send_message(
+                callback.from_user.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles)
+            )
+            return
         if section == "menu":
             versions = await legal.get_active_versions(session)
             await show(callback, t.HELP_TITLE, kb.help_menu(versions))
@@ -107,6 +113,26 @@ def create_router() -> Router:
         enabled = user.marketing_opt_out_at is None
         await show(callback, t.marketing_state(enabled), kb.marketing(enabled))
         await callback.answer(t.SETTINGS_SAVED)
+
+    @router.callback_query(F.data.startswith(f"{campaigns_svc.UNSUBSCRIBE_PREFIX}:"))
+    async def on_unsubscribe(callback: CallbackQuery, session: AsyncSession, user: User) -> None:
+        """«🔕 Відписатися від розсилок» under a campaign message."""
+        await users_svc.set_marketing_opt_out(session, user, opt_out=True)
+        await callback.answer(t.UNSUBSCRIBED, show_alert=True)
+        msg = callback.message
+        if isinstance(msg, Message) and msg.reply_markup is not None:
+            # Keep the campaign's own button, drop «Відписатися».
+            rows = [
+                row
+                for row in msg.reply_markup.inline_keyboard
+                if not any((b.callback_data or "").startswith("mu:") for b in row)
+            ]
+            try:
+                await msg.edit_reply_markup(
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+                )
+            except TelegramAPIError:
+                pass
 
     @router.callback_query(kb.LegalCb.filter(F.action == "accept"))
     async def on_legal_accept(

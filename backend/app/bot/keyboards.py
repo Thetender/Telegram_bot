@@ -66,18 +66,25 @@ def help_menu(versions: dict[str, ActiveLegalVersion]) -> InlineKeyboardMarkup:
     def cb(text: str, section: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(text=text, callback_data=HelpCb(section=section).pack())
 
+    # Compact: short labels two per row, long ones on their own row.
     rows = [
-        [cb(t.BTN_FAQ, "faq")],
+        [cb(t.BTN_FAQ, "faq"), cb(t.BTN_TARIFFS, "tariffs")],
         [cb(t.BTN_ABOUT, "about")],
-        [cb(t.BTN_TARIFFS, "tariffs")],
-        [cb(t.BTN_HELP_CONSULTATION, "consult")],
     ]
+    legal_row = []
     if TERMS in versions:
-        rows.append([InlineKeyboardButton(text=t.BTN_TERMS, url=versions[TERMS].public_url)])
+        legal_row.append(
+            InlineKeyboardButton(text=t.BTN_TERMS_SHORT, url=versions[TERMS].public_url)
+        )
     if PRIVACY in versions:
-        rows.append([InlineKeyboardButton(text=t.BTN_PRIVACY, url=versions[PRIVACY].public_url)])
+        legal_row.append(
+            InlineKeyboardButton(text=t.BTN_PRIVACY_SHORT, url=versions[PRIVACY].public_url)
+        )
+    if legal_row:
+        rows.append(legal_row)
     rows.append([cb(t.BTN_NOTIFICATION_SETTINGS, "settings")])
     rows.append([cb(t.BTN_DELETE_DATA, "delete")])
+    rows.append([cb(t.BTN_MAIN_MENU, "home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

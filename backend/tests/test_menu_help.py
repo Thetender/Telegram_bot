@@ -33,6 +33,8 @@ async def test_my_monitorings_empty_state(harness):
     harness.tg.clear()
     await harness.feed(message_update(UID, t.BTN_MONITORINGS))
     assert harness.tg.texts() == [f"{t.MON_TITLE}\n\n{t.MON_EMPTY}"]
+    labels = [b.text for row in harness.tg.sent()[-1].reply_markup.inline_keyboard for b in row]
+    assert labels == [t.BTN_CREATE_SEARCH, t.BTN_MAIN_MENU]
 
 
 async def test_menu_text_overrides_pending_input(harness):
@@ -67,15 +69,18 @@ async def test_help_sections(harness):
     await register(harness)
     await harness.feed(message_update(UID, t.BTN_HELP))
     markup = harness.tg.sent()[-1].reply_markup
-    labels = [row[0].text for row in markup.inline_keyboard]
+    labels = [[b.text for b in row] for row in markup.inline_keyboard]
     assert labels == [
-        t.BTN_FAQ,
-        t.BTN_ABOUT,
-        t.BTN_TARIFFS,
-        t.BTN_HELP_CONSULTATION,
-        t.BTN_NOTIFICATION_SETTINGS,
-        t.BTN_DELETE_DATA,
-    ]  # legal links appear once legal documents are published
+        [t.BTN_FAQ, t.BTN_TARIFFS],
+        [t.BTN_ABOUT],
+        [t.BTN_NOTIFICATION_SETTINGS],
+        [t.BTN_DELETE_DATA],
+        [t.BTN_MAIN_MENU],
+    ]  # legal links appear once legal documents are published; no duplicate «Консультація»
+
+    harness.tg.clear()
+    await harness.feed(callback_update(UID, kb.HelpCb(section="home").pack()))
+    assert harness.tg.texts() == [t.MAIN_MENU]
 
     sections = [("faq", t.HELP_FAQ), ("about", t.HELP_ABOUT), ("tariffs", t.HELP_TARIFFS)]
     for section, expected in sections:

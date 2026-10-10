@@ -148,7 +148,7 @@ async def test_remote_first_deletion_with_retry(session_factory):
             req = await s.get(PrivacyRequest, rid)
             assert req.status == "IN_PROGRESS" and req.attempts == 1 and req.last_error
             assert (await s.get(User, client.id)).phone is not None
-        page = await d.client.get("/admin/settings")
+        page = await d.client.get("/admin/settings?tab=privacy")
         assert "Повторити" in page.text
 
         # Retry succeeds: monitorings deleted remotely first, then local anonymization.

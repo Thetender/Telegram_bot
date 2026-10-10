@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }}{% endblock %}
+{% block head %}{% if c.status == 'SENDING' %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<p><a href="/admin/campaigns">← Розсилки</a></p>
+<h1>📣 {{ c.title }}
+  {% if c.status == 'DRAFT' %}<span class="badge CLOSED_BY_ADMIN">Чернетка</span>
+  {% elif c.status == 'SENDING' %}<span class="badge IN_PROGRESS">Надсилається</span>
+  {% else %}<span class="badge COMPLETED">Надіслано</span>{% endif %}</h1>
+
+{% if c.status != 'DRAFT' %}
+  <div class="cards">
+    <div class="card stat"><div class="label">Отримувачів</div><div class="value">{{ c.recipients_count }}</div>
+      <div class="sub">з {{ c.audience_total }} · відписались {{ c.opted_out_count }} · недоступні {{ c.unreachable_count }}</div></div>
+    <div class="card stat"><div class="label">Оброблено</div><div class="value">{{ stats.processed }}</div>
+      <div class="sub">у черзі: {{ stats.pending }}</div></div>
+    <div class="card stat"><div class="label">Надіслано</div><div class="value">{{ stats.sent }}</div>
+      <div class="sub">не доставлено {{ stats.failed }} · пропущено {{ stats.skipped }}</div></div>
+    <div class="card stat"><div class="label">Переходи за кнопкою</div><div class="value">{{ stats.clicked if tracked else '—' }}</div>
+      <div class="sub">{{ 'унікальні користувачі' if tracked else 'рахуються лише для посилань на thetender.com.ua' }}</div></div>
+  </div>
+  <p class="muted">Запущено {{ fmt_dt(c.queued_at) }}{% if c.finished_at %} · завершено {{ fmt_dt(c.finished_at) }}{% endif %}. «Пропущено» — люди, які відписалися чи були заблоковані вже після запуску.</p>
+  <h2>Повідомлення</h2>
+  <div class="card tg-preview">{{ preview|safe }}
+    {% if c.button_text %}<div class="tg-button">{{ c.button_text }}</div>{% endif %}
+    <div class="tg-button muted">🔕 Відписатися від розсилок</div></div>
+{% else %}
+
+<div class="grid2">
+  <form class="card stack" method="post" action="/admin/campaigns/{{ c.id }}/save">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="filters" style="display:block">Назва (бачать лише адміністратори)<br>
+      <input type="text" name="title" value="{{ c.title }}" maxlength="200" style="width:100%"></label>
+    <label class="filters" style="display:block">Текст повідомлення<br>
+      <textarea name="message" rows="10" style="width:100%" placeholder="Вітаємо! ...">{{ c.message }}</textarea></label>
+    <p class="muted" style="margin:0">Форматування Telegram: <code>&lt;b&gt;жирний&lt;/b&gt;</code>, <code>&lt;i&gt;курсив&lt;/i&gt;</code>, <code>&lt;a href="https://..."&gt;посилання&lt;/a&gt;</code>. До 3500 символів.</p>
+    <div class="filters" style="margin:0">
+      <label>Текст кнопки (необов'язково)<input type="text" name="button_text" value="{{ c.button_text or '' }}" maxlength="64" placeholder="Переглянути аукціони"></label>
+      <label style="flex:1">Посилання кнопки<input type="url" name="button_url" value="{{ c.button_url or '' }}" placeholder="https://thetender.com.ua/..."></label>
+    </div>
+    <div><b>Кому:</b>
+      <label><input type="radio" name="audience_type" value="ALL" {{ 'checked' if c.audience_type == 'ALL' }}> Усім користувачам</label>
+      <label><input type="radio" name="audience_type" value="SELECTED" {{ 'checked' if c.audience_type == 'SELECTED' }}> Вибраним ({{ selected|length }})</label>
+    </div>
+    <div class="row-actions"><button type="submit">Зберегти</button></div>
+  </form>
+
+  <div class="stack">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">Попередній перегляд</div>
+      <div class="tg-preview">{% if c.message %}{{ preview|safe }}{% else %}<span class="muted">Текст ще не додано.</span>{% endif %}
+        {% if c.button_text %}<div class="tg-button">{{ c.button_text }}</div>{% endif %}
+        <div class="tg-button muted">🔕 Відписатися від розсилок</div></div>
+      {% if c.button_url and not tracked %}<p class="muted">Переходи за кнопкою рахуються лише для посилань на thetender.com.ua.</p>{% endif %}
+      <form method="post" action="/admin/campaigns/{{ c.id }}/test" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="secondary small" type="submit" {{ 'disabled' if errors }}>Надіслати тест собі в Telegram</button>
+      </form>
+    </div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">Отримувачі</div>
+      <dl class="kv">
+        <dt>{{ 'Вибрано' if c.audience_type == 'SELECTED' else 'Усього користувачів' }}</dt><dd>{{ audience.total }}</dd>
+        <dt>Відписались від розсилок</dt><dd>− {{ audience.opted_out }}</dd>
+        <dt>Недоступні (заблокували бота)</dt><dd>− {{ audience.unreachable }}</dd>
+        <dt><b>Отримають повідомлення</b></dt><dd><b>{{ audience.final }}</b></dd>
+      </dl>
+      {% if errors %}<div class="flash warn" style="margin:12px 0 0">{% for e in errors %}{{ e }}<br>{% endfor %}</div>{% endif %}
+      <form method="post" action="/admin/campaigns/{{ c.id }}/confirm" style="margin-top:12px"
+            onsubmit="return confirm('Надіслати розсилку {{ audience.final }} користувачам? Скасувати після запуску не можна.')">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="expected" value="{{ audience.final }}">
+        <button type="submit" {{ 'disabled' if errors or not audience.final }}>Підтвердити й надіслати ({{ audience.final }})</button>
+      </form>
+      <p class="muted" style="margin-bottom:0">Спершу збережіть зміни. Після запуску розсилку не можна змінити, зупинити чи скасувати.</p>
+    </div>
+  </div>
+</div>
+
+{% if c.audience_type == 'SELECTED' %}
+<div class="section" id="selected">
+  <h2>Вибрані користувачі ({{ selected|length }})</h2>
+  {% if selected %}<div class="table-wrap"><table><tbody>
+    {% for u in selected %}<tr><td>{{ u.name or '—' }}</td><td>{{ u.phone or '—' }}{% if u.username %} · @{{ u.username }}{% endif %}</td>
+      <td>{% if u.marketing_opt_out_at %}<span class="muted">відписався — не отримає</span>{% elif u.bot_blocked_at %}<span class="muted">заблокував бота — не отримає</span>{% elif u.access_blocked_at %}<span class="muted">доступ закрито — не отримає</span>{% endif %}</td>
+      <td><form class="inline" method="post" action="/admin/campaigns/{{ c.id }}/select"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="remove" value="{{ u.id }}"><button class="secondary small">Прибрати</button></form></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="muted">Нікого не вибрано — знайдіть користувачів нижче.</p>{% endif %}
+
+  <form class="filters" method="get" action="/admin/campaigns/{{ c.id }}#selected" style="margin-top:12px">
+    <label>Додати користувачів<input type="search" name="q" value="{{ q }}" placeholder="Ім'я, телефон, @username"></label>
+    <button type="submit" class="secondary">Знайти</button>
+  </form>
+  {% if q %}
+    {% if found %}
+    <form method="post" action="/admin/campaigns/{{ c.id }}/select">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="q" value="{{ q }}">
+      <div class="table-wrap"><table><tbody>
+      {% for u in found %}<tr><td><input type="checkbox" name="add" value="{{ u.id }}" {{ 'checked disabled' if u.id in selected_ids }}></td>
+        <td>{{ u.name or '—' }}</td><td>{{ u.phone or '—' }}{% if u.username %} · @{{ u.username }}{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <button type="submit" style="margin-top:8px">Додати позначених</button>
+    </form>
+    {% else %}<div class="flash info">Нікого не знайдено.</div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/admin/campaigns/{{ c.id }}/delete" style="margin-top:24px" onsubmit="return confirm('Видалити чернетку?')">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger small" type="submit">Видалити чернетку</button>
+</form>
+{% endif %}
+{% endblock %}

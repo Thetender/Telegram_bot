@@ -20,11 +20,13 @@ from app.bot import texts as t
 from app.bot.callbacks import MCb
 from app.bot.handlers.results import RCb, send_results_page
 from app.bot.handlers.search import SCb, edit_or_send, render_edit_screen
+from app.bot.keyboards import HelpCb, main_menu
 from app.config import Settings
 from app.integrations.thetender import TenderClient, TenderError
 from app.models import Monitoring, User
 from app.services import monitorings as svc
 from app.services import search as search_svc
+from app.services import users as users_svc
 from app.services.search_params import is_effective, normalize, summary_lines
 
 log = logging.getLogger(__name__)
@@ -42,9 +44,12 @@ def _b(text: str, **cb) -> InlineKeyboardButton:
 
 def list_screen(rows: list[Monitoring], page: int) -> tuple[str, InlineKeyboardMarkup]:
     search_btn = InlineKeyboardButton(text=t.BTN_CREATE_SEARCH, callback_data=SCb(a="open").pack())
+    menu_btn = InlineKeyboardButton(
+        text=t.BTN_MAIN_MENU, callback_data=HelpCb(section="home").pack()
+    )
     if not rows:
         return f"{t.MON_TITLE}\n\n{t.MON_EMPTY}", InlineKeyboardMarkup(
-            inline_keyboard=[[search_btn]]
+            inline_keyboard=[[search_btn], [menu_btn]]
         )
     pages = max(1, -(-len(rows) // PER_PAGE))
     page = min(max(page, 0), pages - 1)
@@ -60,6 +65,7 @@ def list_screen(rows: list[Monitoring], page: int) -> tuple[str, InlineKeyboardM
     if nav:
         kb.append(nav)
     kb.append([search_btn])
+    kb.append([menu_btn])
     text = f"{t.MON_TITLE} ({len(rows)})\n\n{t.MON_LIST_HINT}"
     return text, InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -192,10 +198,11 @@ def create_router() -> Router:
                 await bot.send_message(user.telegram_id, t.MON_SAVE_RETRY)
             return
         await state.clear()
-        markup = InlineKeyboardMarkup(inline_keyboard=[[_b(t.BTN_MY_MONITORINGS, a="list")]])
-        await bot.send_message(
-            user.telegram_id, t.MON_CREATED.format(name=html.escape(row.name)), reply_markup=markup
-        )
+        # The search that became a monitoring is done: start the next one clean.
+        await search_svc.clear_draft(session, user.id)
+        await bot.send_message(user.telegram_id, t.MON_CREATED.format(name=html.escape(row.name)))
+        roles = await users_svc.get_roles(session, user.id)
+        await bot.send_message(user.telegram_id, t.MAIN_MENU, reply_markup=main_menu(roles))
 
     @router.callback_query(MCb.filter(F.a == "usename"))
     async def on_use_suggested(

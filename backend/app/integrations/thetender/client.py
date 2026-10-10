@@ -177,6 +177,20 @@ def parse_page(payload: Any, requested_page: int) -> AuctionPage:
     return AuctionPage(items=items, page=page, pages_count=pages, items_count=count)
 
 
+def _errors_from(resp: httpx.Response) -> list[str]:
+    """Human-readable errors from a 4xx body ({"errors": [...]}) if present."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return []
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if isinstance(errors, dict):
+        errors = list(errors.values())
+    if isinstance(errors, list):
+        return [str(e) for e in errors if e not in (None, "")]
+    return []
+
+
 @dataclass
 class HttpTenderClient:
     base_url: str
@@ -232,7 +246,9 @@ class HttpTenderClient:
                 if resp.status_code == 404:
                     raise TenderError("not_found")
                 if 400 <= resp.status_code < 500:
-                    raise TenderError("validation", f"HTTP {resp.status_code}")
+                    raise TenderError(
+                        "validation", f"HTTP {resp.status_code}", errors=_errors_from(resp)
+                    )
                 if resp.status_code >= 500:
                     last_exc = TenderError("unavailable", f"HTTP {resp.status_code}")
                     log.warning(

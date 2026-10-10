@@ -43,8 +43,32 @@ class User(Base):
     marketing_opt_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set when personal data was anonymized after a completed privacy request.
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Access to the bot closed by an administrator (e.g. a competitor).
+    access_blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    access_blocked_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    access_block_reason: Mapped[str | None] = mapped_column(String(500))
+    # The one-time "access restricted" message was sent.
+    access_block_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
     updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+    @property
+    def is_access_blocked(self) -> bool:
+        return self.access_blocked_at is not None
+
+
+class BlockedPhone(Base):
+    """Phone numbers with closed access: a new Telegram account registering
+    with such a number is blocked right away."""
+
+    __tablename__ = "blocked_phones"
+
+    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
 class UserRole(Base):
@@ -359,6 +383,7 @@ class AdminInvitation(Base):
 
 
 __all__ = [
+    "BlockedPhone",
     "Base",
     "User",
     "UserRole",

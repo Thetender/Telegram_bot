@@ -7,13 +7,14 @@ from datetime import UTC, datetime
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import keyboards as kb
 from app.bot import texts as t
+from app.config import Settings
 from app.models import User
-from app.services import events, legal
+from app.services import access, events, legal
 from app.services import users as users_svc
 from app.services.phone import normalize_phone
 
@@ -54,6 +55,7 @@ def create_router() -> Router:
         state: FSMContext,
         user: User | None,
         roles: set[str],
+        settings: Settings,
     ) -> None:
         contact = message.contact
         sender = message.from_user
@@ -86,6 +88,15 @@ def create_router() -> Router:
         versions = await legal.get_active_versions(session)
         await legal.record_acceptance(session, reg_user.id, [v.id for v in versions.values()])
         await state.clear()
+
+        if await access.apply_phone_block(session, reg_user):
+            # The number belongs to a blocked user: no access for a new account either.
+            await message.answer(
+                t.ACCESS_BLOCKED.format(phone=settings.consultation_phone),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            reg_user.access_block_notified_at = datetime.now(UTC)
+            return
 
         if user is not None and not created:
             # Already registered user re-shared the contact: phone refreshed.

@@ -121,8 +121,11 @@ async def list_users(
     registered_to: date | None = None,
     active_days: int | None = None,
     page: int = 1,
+    blocked_only: bool = False,
 ) -> tuple[list[tuple[User, set[str]]], int]:
     stmt = select(User).where(User.anonymized_at.is_(None))
+    if blocked_only:
+        stmt = stmt.where(User.access_blocked_at.is_not(None))
     if q.strip():
         stmt = stmt.where(_user_search_clause(q))
     if registered_from:

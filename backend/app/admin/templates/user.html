@@ -3,7 +3,15 @@
 {% block content %}
 <p><a href="/admin/users">← Користувачі</a></p>
 <h1>{{ p.user.name or '—' }}
-  {% for r in p.roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}</h1>
+  {% for r in p.roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}
+  {% if p.user.access_blocked_at %}<span class="badge BLOCKED">⛔️ Доступ закрито</span>{% endif %}</h1>
+{% if p.user.access_blocked_at %}
+<div class="flash warn">
+  ⛔️ Доступ до бота закрито {{ fmt_dt(p.user.access_blocked_at) }}{% if blocked_by %} · {{ blocked_by.name }}{% endif %}.
+  {% if p.user.access_block_reason %}<br>Причина: {{ p.user.access_block_reason }}{% endif %}
+  <br><span class="muted">Заблоковано й номер {{ p.user.phone or '—' }}: нові акаунти з ним теж не отримають доступу.</span>
+</div>
+{% endif %}
 <div class="grid2">
   <div class="card">
     <dl class="kv">
@@ -33,6 +41,25 @@
       <a class="btn secondary small" href="/admin/settings">Адміністратори →</a>
     </div>
   </div>
+</div>
+<div class="card" style="margin-top:16px">
+  <h2 style="margin-top:0">Доступ до бота</h2>
+  {% if p.user.access_blocked_at %}
+    <form method="post" action="/admin/users/{{ p.user.id }}/access" onsubmit="return confirm('Відновити доступ до бота?')">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="unblock">
+      <button class="secondary" type="submit">Відновити доступ</button>
+    </form>
+  {% elif p.roles %}
+    <p class="muted">Адміністратора чи менеджера заблокувати не можна — спершу зніміть роль.</p>
+  {% else %}
+    <form method="post" action="/admin/users/{{ p.user.id }}/access" class="row-actions"
+          onsubmit="return confirm('Закрити цьому користувачу доступ до бота? Його відкриті заявки буде закрито.')">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="block">
+      <input type="text" name="reason" maxlength="500" placeholder="Причина (видно лише адміністраторам)" style="min-width:280px">
+      <button class="danger" type="submit">⛔️ Заблокувати доступ</button>
+    </form>
+    <p class="muted" style="margin-bottom:0">Користувач один раз отримає повідомлення «Доступ до бота обмежено» з телефоном компанії, далі бот на нього не реагує. Блокується і номер телефону — новий Telegram-акаунт з ним теж не отримає доступу.</p>
+  {% endif %}
 </div>
 {% if p.consultations %}
 <h2>Консультації</h2>

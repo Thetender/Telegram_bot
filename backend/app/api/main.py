@@ -6,15 +6,18 @@ from __future__ import annotations
 
 import hmac
 import logging
+import mimetypes
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.orm import undefer
 
 from app.admin import mount_admin
 from app.bot.factory import configure_bot, create_bot, create_dispatcher
@@ -22,7 +25,7 @@ from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
 from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
-from app.models import User
+from app.models import LegalDocumentVersion, User
 from app.services import events, notifications
 from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
 from app.workers.delivery import DeliveryWorker
@@ -155,6 +158,29 @@ def create_app(
         if queued:
             request.app.state.worker.wake()
         return JSONResponse({"ok": True, "accepted": queued})
+
+    @app.get("/legal/{version_id}")
+    async def legal_document(version_id: int, request: Request) -> Response:
+        """Public copy of a Terms/Privacy version uploaded in the Dashboard."""
+        async with request.app.state.session_factory() as session:
+            version = await session.scalar(
+                select(LegalDocumentVersion)
+                .options(undefer(LegalDocumentVersion.file_content))
+                .where(LegalDocumentVersion.id == version_id)
+            )
+        if version is None or not version.file_content:
+            return HTMLResponse(INVALID_LINK_PAGE, status_code=404)
+        name = version.file_name or f"document-{version_id}"
+        media_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return Response(
+            version.file_content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}",
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
 
     allowed = allowed_hosts(settings.thetender_base_url)
 

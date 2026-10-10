@@ -353,6 +353,33 @@ async def test_legal_documents_publish_url_and_file(session_factory):
         assert links[0][0].url == "https://thetender.com.ua/new-terms"
 
 
+async def test_legal_version_with_only_a_file_gets_a_public_link(session_factory):
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        await d.login(ADMIN_TG)
+        csrf = await d.csrf()
+        form = {"csrf": csrf, "doc_type": "PRIVACY", "version": "2.0", "public_url": ""}
+        r = await d.client.post("/admin/settings/legal/publish", data=form)
+        assert "msg=url_or_file" in r.headers["location"]
+        r = await d.client.post(
+            "/admin/settings/legal/publish",
+            data=form,
+            files={"file": ("Політика.pdf", b"%PDF-1.4 privacy", "application/pdf")},
+        )
+        assert "msg=published" in r.headers["location"]
+        async with d.sf() as s:
+            v = await s.scalar(select(LegalDocumentVersion))
+        assert v.public_url == f"https://tg.example.com/legal/{v.id}"
+        # The public link works without logging in (users open it from the bot).
+        await d.client.post("/admin/logout", data={"csrf": csrf})
+        d.client.cookies.clear()
+        r = await d.client.get(f"/legal/{v.id}")
+        assert r.status_code == 200 and r.content == b"%PDF-1.4 privacy"
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.headers["content-disposition"].startswith("inline;")
+        assert (await d.client.get("/legal/999999")).status_code == 404
+
+
 async def test_logout(session_factory):
     async with dashboard(session_factory) as d:
         await register(d, ADMIN_TG, ROLE_ADMIN)

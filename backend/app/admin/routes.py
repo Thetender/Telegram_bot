@@ -98,6 +98,7 @@ FLASH = {
     "admin_removed": ("ok", "Адміністратора прибрано."),
     "manager_added": ("ok", "Роль менеджера надано."),
     "manager_removed": ("ok", "Роль менеджера знято."),
+    "url_or_file": ("warn", "Вкажіть публічне посилання або завантажте файл документа."),
     "privacy_done": (
         "ok",
         "Моніторинги користувача видалено на The Tender, персональні дані знеособлено ✅",
@@ -619,18 +620,22 @@ def create_router() -> APIRouter:
     async def legal_publish(
         session: DB,
         ctx: Admin,
+        settings: SettingsDep,
         csrf: str = Form(""),
         doc_type: str = Form(...),
         version: str = Form(...),
-        public_url: str = Form(...),
+        public_url: str = Form(""),
         effective_date: str = Form(""),
         reaccept: str = Form(""),
         file: UploadFile | None = File(None),  # noqa: B008
     ) -> Response:
+        """A version needs a public link OR an uploaded file; with only a file
+        the bot links to its own public copy (/legal/<id>)."""
         auth.check_csrf(ctx, csrf)
         if doc_type not in (legal.TERMS, legal.PRIVACY) or not version.strip():
             raise HTTPException(400)
-        if not public_url.startswith("https://"):
+        public_url = public_url.strip()
+        if public_url and not public_url.startswith("https://"):
             return redirect("/admin/settings", "bad_url")
         content = None
         file_name = None
@@ -639,16 +644,18 @@ def create_router() -> APIRouter:
             if len(content) > MAX_LEGAL_FILE:
                 return redirect("/admin/settings", "file_too_big")
             file_name = file.filename[:255]
+        if not public_url and not content:
+            return redirect("/admin/settings", "url_or_file")
+        if not public_url and not settings.public_base_url:
+            return redirect("/admin/settings", "bad_url")
         effective = _parse_date(effective_date) or datetime.now(UTC).date()
         try:
-            await legal.publish_version(
+            v = await legal.publish_version(
                 session,
                 doc_type=doc_type,
                 version=version.strip()[:32],
-                public_url=public_url.strip(),
-                stored_reference=(
-                    f"sha256:{svc.file_digest(content)}" if content else public_url.strip()
-                ),
+                public_url=public_url or "pending",
+                stored_reference=(f"sha256:{svc.file_digest(content)}" if content else public_url),
                 effective_at=datetime(effective.year, effective.month, effective.day, tzinfo=UTC),
                 require_reacceptance=reaccept == "1",
                 file_name=file_name,
@@ -658,6 +665,8 @@ def create_router() -> APIRouter:
         except ValueError:
             await session.rollback()
             return redirect("/admin/settings", "version_exists")
+        if not public_url:
+            v.public_url = f"{settings.public_base_url}/legal/{v.id}"
         return redirect("/admin/settings", "published")
 
     @router.post("/settings/legal/{version_id}/url")

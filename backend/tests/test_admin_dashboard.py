@@ -161,14 +161,27 @@ async def test_manager_role_and_last_admin_protection(session_factory):
         client = await register(d, CLIENT_TG)
         await d.login(ADMIN_TG)
         csrf = await d.csrf()
+        async with d.sf() as s:  # a request waiting without a manager
+            await consult_svc.create_request(s, admin)
+            await s.commit()
+        d.tg.clear()
         await d.client.post(
             f"/admin/users/{client.id}/manager", data={"csrf": csrf, "action": "grant"}
         )
         async with d.sf() as s:
             assert ROLE_MANAGER in await users_svc.get_roles(s, client.id)
+        (note,) = [m for m in d.tg.requests if isinstance(m, SendMessage)]
+        assert int(note.chat_id) == CLIENT_TG and note.text.startswith("👋 Вітаємо!")
+        assert "Зараз є заявки без менеджера: <b>1</b>" in note.text
+        menu = [b.text for row in note.reply_markup.keyboard for b in row]
+        assert "📋 Мої заявки" in menu
+        d.tg.clear()
         await d.client.post(
             f"/admin/users/{client.id}/manager", data={"csrf": csrf, "action": "revoke"}
         )
+        (note,) = [m for m in d.tg.requests if isinstance(m, SendMessage)]
+        assert note.text.startswith("Роль менеджера The Tender знято")
+        assert "📋 Мої заявки" not in [b.text for row in note.reply_markup.keyboard for b in row]
         async with d.sf() as s:
             assert ROLE_MANAGER not in await users_svc.get_roles(s, client.id)
             audit = (await s.scalars(select(Event).where(Event.event_type == "ROLE_REVOKED"))).all()
@@ -178,6 +191,30 @@ async def test_manager_role_and_last_admin_protection(session_factory):
         assert "msg=last_admin" in r.headers["location"]
         async with d.sf() as s:
             assert await users_svc.count_admins(s) == 1
+
+
+async def test_settings_shows_bot_link_for_unregistered_people(session_factory):
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        await d.login(ADMIN_TG)
+        r = await d.client.get("/admin/settings?find_manager=380999999999")
+        assert "Користувача не знайдено" in r.text
+        assert "https://t.me/TgtestTT_bot" in r.text
+
+
+async def test_manager_grant_with_unreachable_user_warns(session_factory):
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        client = await register(d, CLIENT_TG)
+        await d.login(ADMIN_TG)
+        csrf = await d.csrf()
+        d.tg.fail_chats.add(CLIENT_TG)
+        r = await d.client.post(
+            "/admin/settings/managers/add", data={"csrf": csrf, "user_id": client.id}
+        )
+        assert "msg=manager_added_unnotified" in r.headers["location"]
+        async with d.sf() as s:
+            assert ROLE_MANAGER in await users_svc.get_roles(s, client.id)
 
 
 async def test_invitation_flow_and_removed_admin_loses_access(session_factory):

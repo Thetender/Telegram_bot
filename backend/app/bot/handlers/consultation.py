@@ -130,27 +130,37 @@ async def show_my_requests(
     session: AsyncSession,
     settings: Settings,
     user: User,
-    active: bool,
+    tab: str = "a",
     edit: CallbackQuery | None = None,
 ) -> None:
-    items = await svc.manager_requests(session, user.id, active=active)
-    lines = [t.MY_REQUESTS_TITLE, "", f"<b>{t.BTN_ACTIVE if active else t.BTN_COMPLETED}</b>"]
+    """Tabs: n = new (nobody took them yet), a = in progress (mine), d = done (mine)."""
+    if tab not in ("n", "a", "d"):
+        tab = "a"
+    if tab == "n":
+        items = await svc.new_requests(session)
+    else:
+        items = await svc.manager_requests(session, user.id, active=tab == "a")
+    titles = {"n": t.BTN_NEW_REQUESTS, "a": t.BTN_ACTIVE, "d": t.BTN_COMPLETED}
+    empty = {
+        "n": t.MY_REQUESTS_EMPTY_NEW,
+        "a": t.MY_REQUESTS_EMPTY_ACTIVE,
+        "d": t.MY_REQUESTS_EMPTY_DONE,
+    }
+    lines = [t.MY_REQUESTS_TITLE, "", f"<b>{titles[tab]}</b>"]
     rows = [
-        [
-            _btn(("• " if active else "") + t.BTN_ACTIVE, "list", v="a"),
-            _btn(("" if active else "• ") + t.BTN_COMPLETED, "list", v="d"),
-        ]
+        [_btn(("• " if tab == key else "") + titles[key], "list", v=key) for key in ("n", "a", "d")]
     ]
     if not items:
-        lines.append(t.MY_REQUESTS_EMPTY_ACTIVE if active else t.MY_REQUESTS_EMPTY_DONE)
+        lines.append(empty[tab])
     for req in items:
-        when = fmt_local(req.claimed_at if active else req.completed_at, settings.timezone)
-        suffix = (
-            ""
-            if active
-            else " "
-            + (t.RESULT_LABELS.get(req.result or "", "⛔️") if req.status == "COMPLETED" else "⛔️")
-        )
+        if tab == "n":
+            when, suffix = fmt_local(req.created_at, settings.timezone), ""
+        elif tab == "a":
+            when, suffix = fmt_local(req.claimed_at, settings.timezone), ""
+        else:
+            when = fmt_local(req.completed_at or req.closed_at, settings.timezone)
+            result = t.RESULT_LABELS.get(req.result or "", "⛔️")
+            suffix = " " + (result if req.status == "COMPLETED" else "⛔️")
         label = f"№{req.id} · {req.contact_name or '—'} · {when}{suffix}"
         rows.append([_btn(label[:60], "view", req.id)])
     text = "\n".join(lines)
@@ -218,7 +228,7 @@ def create_router() -> Router:
         message: Message, state: FSMContext, session: AsyncSession, settings: Settings, user: User
     ) -> None:
         await state.clear()
-        await show_my_requests(message.bot, message.chat.id, session, settings, user, active=True)
+        await show_my_requests(message.bot, message.chat.id, session, settings, user, tab="a")
 
     @router.callback_query(CCb.filter(F.a == "open"))
     async def on_open(
@@ -360,7 +370,7 @@ def create_router() -> Router:
             session,
             settings,
             user,
-            active=callback_data.v != "d",
+            tab=callback_data.v,
             edit=callback,
         )
 
@@ -373,15 +383,20 @@ def create_router() -> Router:
         user: User,
     ) -> None:
         req = await session.get(ConsultationRequest, callback_data.r)
-        if req is None or req.claimed_by != user.id:
+        if req is None or (req.status != "NEW" and req.claimed_by != user.id):
+            # Someone else took it meanwhile, or it is not this manager's request.
             await callback.answer(t.STALE_ACTION, show_alert=True)
             return
         await callback.answer()
         tail, markup = status_tail(req, None, user)
-        await callback.bot.send_message(
-            callback.from_user.id,
-            f"{request_card(req, settings.timezone)}\n\n{tail}",
-            reply_markup=markup,
+        text = (
+            f"{request_card(req, settings.timezone)}\n\n{tail}"
+            if tail
+            else (request_card(req, settings.timezone))
         )
+        msg = await callback.bot.send_message(callback.from_user.id, text, reply_markup=markup)
+        if req.status == "NEW":
+            # Tracked like the original notifications, so it is updated after a claim.
+            await svc.record_notification(session, req.id, user, "MANAGER", msg.message_id)
 
     return router

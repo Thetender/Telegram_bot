@@ -233,6 +233,35 @@ async def test_my_requests_lists_only_own(harness):
     assert any(label.startswith(f"№{rid}") and "Відмова" in label for label in labels)
 
 
+async def test_new_tab_lets_a_later_manager_take_an_unassigned_request(harness):
+    """A request created when no manager existed is visible in «🆕 Нові»."""
+    h = harness
+    await register(h, CLIENT)
+    await register(h, ADMIN, ROLE_ADMIN)
+    await tap(h, CLIENT, "req")  # nobody but the admin (fallback) is notified
+    rid = await request_id(h)
+    await register(h, M1, ROLE_MANAGER)  # added later
+    h.tg.clear()
+    await tap(h, M1, "list", v="n")
+    text = h.tg.sent()[-1].text
+    labels = [b.text for row in h.tg.sent()[-1].reply_markup.inline_keyboard for b in row]
+    assert t.BTN_NEW_REQUESTS in text
+    assert any(label.startswith(f"№{rid}") for label in labels)
+
+    await tap(h, M1, "view", rid)
+    card = h.tg.sent()[-1]
+    assert [b.text for row in card.reply_markup.inline_keyboard for b in row] == [t.BTN_CLAIM]
+    await tap(h, M1, "claim", rid)
+    assert (await get_req(h, rid)).status == "IN_PROGRESS"
+    # The card opened from «Нові» was updated with the result buttons.
+    edits = [r for r in h.tg.requests if isinstance(r, EditMessageText) and int(r.chat_id) == M1]
+    assert edits and t.REQ_IN_PROGRESS_MINE in edits[-1].text
+
+    h.tg.clear()
+    await tap(h, M1, "list", v="n")
+    assert t.MY_REQUESTS_EMPTY_NEW in h.tg.sent()[-1].text
+
+
 async def test_non_manager_cannot_claim(harness):
     h = harness
     await setup_people(h)

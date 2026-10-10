@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -184,6 +184,31 @@ async def notifications_for(
                 )
             )
         ).all()
+    )
+
+
+async def new_requests(session: AsyncSession, limit: int = 30) -> list[ConsultationRequest]:
+    """Requests nobody has taken yet (e.g. created while there were no managers)."""
+    return list(
+        (
+            await session.scalars(
+                select(ConsultationRequest)
+                .where(ConsultationRequest.status == "NEW")
+                .order_by(ConsultationRequest.created_at, ConsultationRequest.id)
+                .limit(limit)
+            )
+        ).all()
+    )
+
+
+async def count_new(session: AsyncSession) -> int:
+    return (
+        await session.scalar(
+            select(func.count())
+            .select_from(ConsultationRequest)
+            .where(ConsultationRequest.status == "NEW")
+        )
+        or 0
     )
 
 

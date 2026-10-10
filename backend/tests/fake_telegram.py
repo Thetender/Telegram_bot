@@ -12,6 +12,7 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.methods import EditMessageText, SendMessage, TelegramMethod
 from aiogram.types import CallbackQuery, Chat, Contact, Message, Update
 from aiogram.types import User as TgUser
@@ -24,8 +25,15 @@ class FakeSession(BaseSession):
         super().__init__()
         self.requests: list[TelegramMethod[Any]] = []
         self._ids = itertools.count(1000)
+        # Chats that "blocked the bot": sending there raises TelegramForbiddenError.
+        self.fail_chats: set[int] = set()
 
     async def make_request(self, bot: Bot, method: TelegramMethod[Any], timeout: int | None = None):
+        chat = getattr(method, "chat_id", None)
+        if chat is not None and int(chat) in self.fail_chats:
+            raise TelegramForbiddenError(
+                method=method, message="Forbidden: bot was blocked by the user"
+            )
         self.requests.append(method)
         if isinstance(method, (SendMessage, EditMessageText)):
             chat_id = method.chat_id if method.chat_id is not None else 0
@@ -52,6 +60,9 @@ class FakeSession(BaseSession):
 
     def texts(self) -> list[str]:
         return [r.text for r in self.sent()]
+
+    def to(self, chat_id: int) -> list[SendMessage | EditMessageText]:
+        return [r for r in self.sent() if int(r.chat_id or 0) == chat_id]
 
     def clear(self) -> None:
         self.requests.clear()

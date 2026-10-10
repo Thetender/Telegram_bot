@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand, LinkPreviewOptions
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.bot.handlers import fallback, help, menu, results, search, start
+from app.bot.handlers import consultation, fallback, help, menu, results, search, start
 from app.bot.middlewares import UpdateContextMiddleware
 from app.bot.storage import PostgresStorage
 from app.config import Settings
@@ -45,6 +45,7 @@ def create_dispatcher(
         menu.create_router(),
         search.create_router(),
         results.create_router(),
+        consultation.create_router(),
         help.create_router(),
         fallback.create_router(),
     )

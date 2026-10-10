@@ -32,7 +32,6 @@ async def test_menu_buttons_show_placeholders(harness):
     await register(harness)
     for button, section in [
         (t.BTN_MONITORINGS, "Мої моніторинги"),
-        (t.BTN_CONSULTATION, "Консультація"),
     ]:
         harness.tg.clear()
         await harness.feed(message_update(UID, button))
@@ -64,7 +63,7 @@ async def test_my_requests_only_for_managers(harness, db):
     assert t.BTN_MY_REQUESTS in labels
     harness.tg.clear()
     await harness.feed(message_update(UID, t.BTN_MY_REQUESTS))
-    assert harness.tg.texts() == [t.coming_soon("Мої заявки")]
+    assert harness.tg.texts()[-1].startswith(t.MY_REQUESTS_TITLE)
 
 
 async def test_help_sections(harness):
@@ -147,3 +146,21 @@ def test_main_menu_keyboard_folds_away_after_tap():
 
     markup = kb.main_menu(set())
     assert markup.one_time_keyboard is True and not markup.is_persistent
+
+
+def test_text_constants_are_not_redefined():
+    """A later constant with the same name silently changes an earlier button."""
+    import ast
+    import pathlib
+
+    import app.bot.texts as texts_module
+
+    tree = ast.parse(pathlib.Path(texts_module.__file__).read_text())
+    names = [
+        target.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    ]
+    assert len(names) == len(set(names)), sorted({n for n in names if names.count(n) > 1})

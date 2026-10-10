@@ -242,6 +242,74 @@ class SearchSnapshot(Base):
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
+CONSULTATION_OPEN = ("NEW", "IN_PROGRESS")
+
+
+class ConsultationRequest(Base):
+    __tablename__ = "consultation_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('NEW','IN_PROGRESS','COMPLETED','CLOSED_BY_ADMIN')", name="status_valid"
+        ),
+        CheckConstraint(
+            "result IS NULL OR result IN ('INTERESTED','DECLINED')", name="result_valid"
+        ),
+        # A client may have only one open (NEW / IN_PROGRESS) request at a time.
+        Index(
+            "uq_consultation_one_open_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('NEW','IN_PROGRESS')"),
+        ),
+        Index("ix_consultation_status_created", "status", "created_at"),
+        Index("ix_consultation_claimed_by", "claimed_by", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Contact snapshot at request time (the user may change it later).
+    contact_name: Mapped[str | None] = mapped_column(String(256))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
+    contact_username: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="NEW")
+    result: Mapped[str | None] = mapped_column(String(16))
+    claimed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+
+class ConsultationNotification(Base):
+    """A Telegram message about a request sent to a manager (or an admin as
+    fallback). Kept so other managers' messages can be updated after a claim."""
+
+    __tablename__ = "consultation_notifications"
+    __table_args__ = (
+        CheckConstraint("kind IN ('MANAGER','ADMIN_FALLBACK')", name="kind_valid"),
+        CheckConstraint("status IN ('SENT','FAILED')", name="status_valid"),
+        Index("ix_consultation_notifications_request", "request_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        ForeignKey("consultation_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    recipient_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="MANAGER")
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 __all__ = [
     "Base",
     "User",
@@ -257,6 +325,9 @@ __all__ = [
     "PrivacyRequest",
     "SearchDraft",
     "SearchSnapshot",
+    "ConsultationRequest",
+    "ConsultationNotification",
+    "CONSULTATION_OPEN",
     "ROLE_MANAGER",
     "ROLE_ADMIN",
 ]

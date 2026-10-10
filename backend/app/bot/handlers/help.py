@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import filters
 from app.bot import keyboards as kb
 from app.bot import texts as t
+from app.config import Settings
 from app.models import User
 from app.services import legal, privacy
 from app.services import users as users_svc
@@ -46,6 +47,7 @@ def create_router() -> Router:
         callback_data: kb.HelpCb,
         session: AsyncSession,
         user: User,
+        settings: Settings,
     ) -> None:
         section = callback_data.section
         if section == "menu":
@@ -54,7 +56,11 @@ def create_router() -> Router:
         elif section in STATIC_SECTIONS:
             await show(callback, STATIC_SECTIONS[section], kb.back_to_help())
         elif section == "consult":
-            await show(callback, t.coming_soon("Консультація"), kb.back_to_help())
+            from app.bot.handlers.consultation import show_consultation
+
+            await callback.answer()
+            await show_consultation(callback.bot, callback.from_user.id, session, settings, user)
+            return
         elif section == "settings":
             enabled = user.marketing_opt_out_at is None
             await show(callback, t.marketing_state(enabled), kb.marketing(enabled))

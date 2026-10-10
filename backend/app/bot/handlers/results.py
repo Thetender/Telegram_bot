@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import filters
 from app.bot import texts as t
-from app.bot.handlers.search import SCb, edit_or_send, render_screen, send_screen
+from app.bot.handlers.search import SCb, edit_or_send, render_grid
 from app.config import Settings
 from app.integrations.thetender import Auction, TenderClient, TenderError
 from app.integrations.thetender.client import DEFAULT_PAGESIZE
@@ -270,7 +270,9 @@ def create_router() -> Router:
             return
         params = snap.params if callback_data.a == "edit" else {}
         await search_svc.save_draft(session, user.id, params)
-        await send_screen(callback.bot, callback.from_user.id, params)
+        # Straight to the parameter grid: the user came here to change something.
+        text, markup = render_grid(params)
+        await callback.bot.send_message(callback.from_user.id, text, reply_markup=markup)
 
     @router.callback_query(RCb.filter(F.a.in_({"editok", "newok"})))
     async def on_confirmed(
@@ -286,7 +288,7 @@ def create_router() -> Router:
         await state.clear()
         params = snap.params if callback_data.a == "editok" else {}
         await search_svc.save_draft(session, user.id, params)
-        await edit_or_send(callback, *render_screen(params))
+        await edit_or_send(callback, *render_grid(params))
         await callback.answer()
 
     return router

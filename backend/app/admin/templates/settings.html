@@ -109,8 +109,9 @@
             <label>Версія<input type="text" name="version" placeholder="1.0" required maxlength="32"></label>
             <label>Діє з<input type="date" name="effective_date" value="{{ today }}"></label>
           </div>
-          <label class="filters" style="display:block">Публічне посилання<br><input type="url" name="public_url" placeholder="https://thetender.com.ua/..." required style="width:100%"></label>
-          <label>Копія документа (PDF/DOCX, необов'язково, до 10 МБ)<br><input type="file" name="file"></label>
+          <label class="filters" style="display:block">Публічне посилання <span class="muted">(або лише файл нижче)</span><br><input type="url" name="public_url" placeholder="https://thetender.com.ua/..." style="width:100%"></label>
+          <label>Файл документа (PDF/DOCX, до 10 МБ)<br><input type="file" name="file"></label>
+          <p class="muted" style="margin:0">Якщо вказати лише файл, бот показуватиме користувачам посилання на нього (на нашому сайті бота). Посилання можна змінити пізніше.</p>
           <label><input type="checkbox" name="reaccept" value="1"> Потребує повторного підтвердження користувачами <span class="muted">— користувачі не зможуть користуватися ботом, доки не підтвердять нову редакцію (сповіщення про аукціони надходитимуть)</span></label>
           <button type="submit">Опублікувати</button>
         </form>

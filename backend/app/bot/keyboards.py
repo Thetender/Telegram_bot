@@ -126,13 +126,6 @@ def legal_gate(pending: list[ActiveLegalVersion]) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text=t.BTN_NOTIFICATION_SETTINGS, callback_data=HelpCb(section="settings").pack()
-            )
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
                 text=t.BTN_DELETE_DATA, callback_data=HelpCb(section="delete").pack()
             )
         ]

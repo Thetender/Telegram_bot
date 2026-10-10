@@ -28,7 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot import texts as t
 from app.config import Settings
-from app.models import NotificationDelivery, User
+from app.models import Campaign, CampaignRecipient, NotificationDelivery, User
+from app.services import campaigns as campaigns_svc
 from app.services import events
 from app.services.links import tracked_url
 from app.services.search_params import format_number
@@ -41,6 +42,8 @@ BATCH = 25
 GLOBAL_INTERVAL = 0.05  # ≈20 messages/s, below Telegram's ~30/s bot limit
 PER_CHAT_INTERVAL = 1.0
 POLL_INTERVAL = 2.0
+
+QueueModel = type[NotificationDelivery] | type[CampaignRecipient]
 
 
 def backoff(attempts: int) -> timedelta:
@@ -133,65 +136,79 @@ class DeliveryWorker:
 
     # ---------- one batch ----------
 
-    async def _claim(self) -> list[int]:
+    async def _claim(self, model: QueueModel) -> list[int]:
         now = datetime.now(UTC)
         async with self.sf() as session:
             due = (
-                select(NotificationDelivery.id)
+                select(model.id)
                 .where(
                     or_(
-                        (NotificationDelivery.status == "PENDING")
-                        & (NotificationDelivery.next_attempt_at <= now),
-                        (NotificationDelivery.status == "SENDING")
-                        & (NotificationDelivery.locked_at < now - LEASE),
+                        (model.status == "PENDING") & (model.next_attempt_at <= now),
+                        (model.status == "SENDING") & (model.locked_at < now - LEASE),
                     )
                 )
-                .order_by(NotificationDelivery.id)
+                .order_by(model.id)
                 .limit(BATCH)
                 .with_for_update(skip_locked=True)
             )
             ids = (
                 await session.scalars(
-                    update(NotificationDelivery)
-                    .where(NotificationDelivery.id.in_(due.scalar_subquery()))
-                    .values(
-                        status="SENDING",
-                        locked_at=now,
-                        attempts=NotificationDelivery.attempts + 1,
-                    )
-                    .returning(NotificationDelivery.id)
+                    update(model)
+                    .where(model.id.in_(due.scalar_subquery()))
+                    .values(status="SENDING", locked_at=now, attempts=model.attempts + 1)
+                    .returning(model.id)
                 )
             ).all()
             await session.commit()
         return sorted(ids)
 
     async def run_once(self) -> int:
-        """Claim and process one batch. Returns the number of rows handled."""
+        """Claim and process one batch. Auction notifications always go first;
+        campaign messages are sent only while no notification is waiting.
+        Returns the number of rows handled."""
         wait = self._paused_until - time.monotonic()
         if wait > 0:
             await asyncio.sleep(wait)
-        ids = await self._claim()
-        for index, delivery_id in enumerate(ids):
-            paused = await self._process(delivery_id)
-            if paused:
-                await self._release(ids[index + 1 :])
-                break
-        return len(ids)
+        queues = (
+            (NotificationDelivery, self._process),
+            (CampaignRecipient, self._process_campaign),
+        )
+        for model, process in queues:
+            ids = await self._claim(model)
+            if not ids:
+                continue
+            for index, row_id in enumerate(ids):
+                if await process(row_id):  # 429: pause, give the rest back
+                    await self._release(model, ids[index + 1 :])
+                    break
+            if model is CampaignRecipient:
+                await self._finish_campaigns(ids)
+            return len(ids)
+        return 0
 
-    async def _release(self, ids: list[int]) -> None:
+    async def _release(self, model: QueueModel, ids: list[int]) -> None:
         """Give claimed-but-unsent rows back to the queue (after a 429)."""
         if not ids:
             return
         async with self.sf() as session:
             await session.execute(
-                update(NotificationDelivery)
-                .where(NotificationDelivery.id.in_(ids), NotificationDelivery.status == "SENDING")
-                .values(
-                    status="PENDING",
-                    locked_at=None,
-                    attempts=NotificationDelivery.attempts - 1,
+                update(model)
+                .where(model.id.in_(ids), model.status == "SENDING")
+                .values(status="PENDING", locked_at=None, attempts=model.attempts - 1)
+            )
+            await session.commit()
+
+    async def _finish_campaigns(self, recipient_ids: list[int]) -> None:
+        async with self.sf() as session:
+            campaign_ids = set(
+                await session.scalars(
+                    select(CampaignRecipient.campaign_id).where(
+                        CampaignRecipient.id.in_(recipient_ids)
+                    )
                 )
             )
+            for campaign_id in sorted(campaign_ids):
+                await campaigns_svc.finish_if_done(session, campaign_id)
             await session.commit()
 
     async def _throttle(self, chat_id: int) -> None:
@@ -274,5 +291,62 @@ class DeliveryWorker:
                     "monitoring": d.monitoring_name,
                 },
             )
+            await session.commit()
+            return False
+
+    async def _process_campaign(self, recipient_id: int) -> bool:
+        """Send one campaign message. Returns True when sending must pause (429)."""
+        async with self.sf() as session:
+            r = await session.get(CampaignRecipient, recipient_id, with_for_update=True)
+            if r is None or r.status != "SENDING":
+                return False
+            user = await session.get(User, r.user_id)
+            campaign = await session.get(Campaign, r.campaign_id)
+            now = datetime.now(UTC)
+            skip_reason = None
+            if user is None or campaign is None or user.anonymized_at is not None:
+                skip_reason = "personal data deleted"
+            elif user.access_blocked_at is not None:
+                skip_reason = "access blocked by admin"
+            elif user.marketing_opt_out_at is not None:
+                skip_reason = "opted out of marketing"  # changed after confirmation
+            if skip_reason:
+                r.status, r.last_error, r.locked_at = "SKIPPED", skip_reason, None
+                await session.commit()
+                return False
+            assert user is not None and campaign is not None
+
+            await self._throttle(user.telegram_id)
+            try:
+                text, markup = campaigns_svc.render(campaign, user.id, self.settings)
+                msg = await self.bot.send_message(user.telegram_id, text, reply_markup=markup)
+            except TelegramRetryAfter as exc:
+                r.status, r.locked_at = "PENDING", None
+                r.attempts -= 1  # a flood pause is not a failed attempt
+                r.next_attempt_at = now + timedelta(seconds=exc.retry_after)
+                self._paused_until = time.monotonic() + exc.retry_after
+                await session.commit()
+                log.warning("Telegram flood limit: pausing campaigns for %ss", exc.retry_after)
+                return True
+            except (TelegramForbiddenError, TelegramBadRequest) as exc:
+                r.status, r.locked_at, r.last_error = "FAILED", None, str(exc)[:1000]
+                if isinstance(exc, TelegramForbiddenError) or "chat not found" in str(exc):
+                    user.bot_blocked_at = now  # unreachable for future campaigns
+                else:
+                    log.error("Campaign message %s rejected by Telegram: %s", r.id, exc)
+                await session.commit()
+                return False
+            except (TelegramAPIError, OSError, TimeoutError) as exc:
+                r.locked_at, r.last_error = None, f"{type(exc).__name__}: {exc}"[:1000]
+                if r.attempts >= MAX_ATTEMPTS:
+                    r.status = "FAILED"
+                else:
+                    r.status = "PENDING"
+                    r.next_attempt_at = now + backoff(r.attempts)
+                await session.commit()
+                return False
+
+            r.status, r.locked_at, r.last_error = "SENT", None, None
+            r.sent_at, r.message_id = datetime.now(UTC), msg.message_id
             await session.commit()
             return False

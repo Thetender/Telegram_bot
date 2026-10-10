@@ -15,6 +15,8 @@ MENU_BUTTONS = (BTN_SEARCH, BTN_MONITORINGS, BTN_CONSULTATION, BTN_HELP, BTN_MY_
 BTN_SHARE_PHONE = "📱 Поділитися телефоном"
 BTN_TERMS = "📄 Умови використання"
 BTN_PRIVACY = "🔒 Політика конфіденційності"
+BTN_TERMS_SHORT = "📄 Умови"
+BTN_PRIVACY_SHORT = "🔒 Конфіденційність"
 BTN_BACK = "◀️ Назад"
 
 # --- Registration ---
@@ -104,6 +106,11 @@ def marketing_state(enabled: bool) -> str:
 BTN_MARKETING_OFF = "Вимкнути маркетингові повідомлення"
 BTN_MARKETING_ON = "Увімкнути маркетингові повідомлення"
 SETTINGS_SAVED = "Налаштування збережено ✅"
+UNSUBSCRIBED = (
+    "Ви відписалися від рекламних розсилок ✅\n\n"
+    "Сповіщення за моніторингами надходитимуть як і раніше. Повернути розсилки: "
+    "Допомога → Налаштування повідомлень."
+)
 
 # --- Personal data deletion ---
 DELETE_DATA_EXPLANATION = (

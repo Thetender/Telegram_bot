@@ -26,12 +26,14 @@ from app.config import Settings
 from app.models import (
     ROLE_ADMIN,
     ROLE_MANAGER,
+    Campaign,
     ConsultationRequest,
     LegalDocumentVersion,
     User,
 )
 from app.services import access as access_svc
 from app.services import admin as svc
+from app.services import campaigns as campaigns_svc
 from app.services import consultations as consult_svc
 from app.services import events, legal
 from app.services import privacy as privacy_svc
@@ -98,6 +100,20 @@ FLASH = {
     "admin_removed": ("ok", "Адміністратора прибрано."),
     "manager_added": ("ok", "Роль менеджера надано."),
     "manager_removed": ("ok", "Роль менеджера знято."),
+    "campaign_locked": ("info", "Розсилку вже надіслано — змінювати її не можна."),
+    "campaign_invalid": ("warn", "Розсилку не можна надіслати — виправте помилки нижче."),
+    "campaign_test_sent": ("ok", "Тестове повідомлення надіслано вам у Telegram."),
+    "campaign_test_failed": (
+        "warn",
+        "Telegram не прийняв повідомлення — перевірте форматування тексту й посилання.",
+    ),
+    "campaign_audience_changed": (
+        "warn",
+        "Кількість отримувачів змінилася з моменту відкриття сторінки — "
+        "перевірте й підтвердіть ще раз.",
+    ),
+    "campaign_queued": ("ok", "Розсилку запущено ✅ Прогрес оновлюється автоматично."),
+    "campaign_deleted": ("ok", "Чернетку видалено."),
     "url_or_file": ("warn", "Вкажіть публічне посилання або завантажте файл документа."),
     "privacy_done": (
         "ok",
@@ -167,6 +183,24 @@ async def require_admin(request: Request, session: DB) -> auth.AdminContext:
 
 
 Admin = Annotated[auth.AdminContext, Depends(require_admin)]
+
+
+SETTINGS_TABS = {
+    "admins": "Адміністратори",
+    "managers": "Менеджери",
+    "legal": "Юридичні документи",
+    "privacy": "Запити на видалення",
+}
+
+
+def _safe_next(path: str) -> bool:
+    """Only local dashboard pages are allowed as a return address."""
+    return path.startswith("/admin/") and "//" not in path and "\\" not in path
+
+
+def redirect_back(path: str, msg: str | None) -> RedirectResponse:
+    sep = "&" if "?" in path else "?"
+    return RedirectResponse(path + (f"{sep}msg={msg}" if msg else ""), status_code=303)
 
 
 def redirect(path: str, msg: str | None = None, **params: object) -> RedirectResponse:
@@ -321,6 +355,8 @@ def create_router() -> APIRouter:
             "users",
             rows=rows,
             mcounts=await svc.monitoring_counts(session, [u.id for u, _ in rows]),
+            here="/admin/users" + (f"?{base_query}&page={page}" if base_query else f"?page={page}"),
+            pending_admin_ids=await svc.pending_invitation_user_ids(session),
             total=total,
             page=page,
             pages=pages,
@@ -385,12 +421,15 @@ def create_router() -> APIRouter:
         user_id: int,
         csrf: str = Form(""),
         action: str = Form(""),
+        next: str = Form(""),
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         user = await session.get(User, user_id)
         if user is None:
             raise HTTPException(404)
         msg = await _set_manager_role(request, session, ctx, user, grant=action == "grant")
+        if _safe_next(next):
+            return redirect_back(next, msg)
         return redirect(f"/admin/users/{user_id}", msg)
 
     # ---------------- consultations ----------------
@@ -471,18 +510,184 @@ def create_router() -> APIRouter:
     # ---------------- campaigns (Iteration 7) ----------------
 
     @router.get("/campaigns", response_class=HTMLResponse)
-    async def campaigns(request: Request, ctx: Admin) -> Response:
-        return render(request, "campaigns.html", ctx, "campaigns")
+    async def campaigns(request: Request, session: DB, ctx: Admin) -> Response:
+        rows = list(await session.scalars(select(Campaign).order_by(Campaign.id.desc()).limit(200)))
+        stats = await campaigns_svc.progress(session, [c.id for c in rows])
+        return render(request, "campaigns.html", ctx, "campaigns", rows=rows, stats=stats)
+
+    @router.post("/campaigns/new")
+    async def campaign_new(session: DB, ctx: Admin, csrf: str = Form("")) -> Response:
+        auth.check_csrf(ctx, csrf)
+        today = datetime.now(UTC).strftime("%d.%m.%Y")
+        campaign = Campaign(title=f"Розсилка {today}", message="", created_by=ctx.user.id)
+        session.add(campaign)
+        await session.flush()
+        return redirect(f"/admin/campaigns/{campaign.id}")
+
+    async def _campaign(session: AsyncSession, campaign_id: int) -> Campaign:
+        campaign = await session.get(Campaign, campaign_id)
+        if campaign is None:
+            raise HTTPException(404)
+        return campaign
+
+    @router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
+    async def campaign_page(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        settings: SettingsDep,
+        campaign_id: int,
+        q: str = "",
+    ) -> Response:
+        campaign = await _campaign(session, campaign_id)
+        selected = []
+        if campaign.selected_user_ids:
+            selected = list(
+                await session.scalars(
+                    select(User)
+                    .where(User.id.in_(campaign.selected_user_ids))
+                    .order_by(User.name, User.id)
+                )
+            )
+        found = await campaigns_svc.search_users(session, q) if q else []
+        return render(
+            request,
+            "campaign.html",
+            ctx,
+            "campaigns",
+            c=campaign,
+            errors=campaigns_svc.validate(campaign) if campaign.status == "DRAFT" else [],
+            audience=await campaigns_svc.audience(session, campaign),
+            stats=(await campaigns_svc.progress(session, [campaign.id]))[campaign.id],
+            preview=campaigns_svc.preview_html(campaign.message),
+            tracked=campaigns_svc.link_is_tracked(campaign, settings),
+            selected=selected,
+            found=found,
+            selected_ids=set(campaign.selected_user_ids or []),
+            q=q,
+        )
+
+    @router.post("/campaigns/{campaign_id}/save")
+    async def campaign_save(
+        session: DB,
+        ctx: Admin,
+        campaign_id: int,
+        csrf: str = Form(""),
+        title: str = Form(""),
+        message: str = Form(""),
+        button_text: str = Form(""),
+        button_url: str = Form(""),
+        audience_type: str = Form("ALL"),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        campaign = await _campaign(session, campaign_id)
+        if campaign.status != "DRAFT":
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_locked")
+        campaign.title = title.strip()[:200] or campaign.title
+        campaign.message = message.replace("\r\n", "\n").strip()
+        campaign.button_text = button_text.strip()[:64] or None
+        campaign.button_url = button_url.strip() or None
+        campaign.audience_type = "SELECTED" if audience_type == "SELECTED" else "ALL"
+        return redirect(f"/admin/campaigns/{campaign_id}", "saved")
+
+    @router.post("/campaigns/{campaign_id}/select")
+    async def campaign_select(
+        session: DB,
+        ctx: Admin,
+        campaign_id: int,
+        csrf: str = Form(""),
+        add: list[int] = Form([]),  # noqa: B008
+        remove: int = Form(0),
+        q: str = Form(""),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        campaign = await _campaign(session, campaign_id)
+        if campaign.status != "DRAFT":
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_locked")
+        ids = [i for i in (campaign.selected_user_ids or []) if i != remove]
+        for uid in add:
+            if uid not in ids:
+                ids.append(uid)
+        campaign.selected_user_ids = ids[: campaigns_svc.MAX_SELECTED]
+        campaign.audience_type = "SELECTED"
+        return redirect(f"/admin/campaigns/{campaign_id}", None, q=q)
+
+    @router.post("/campaigns/{campaign_id}/test")
+    async def campaign_test(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        settings: SettingsDep,
+        campaign_id: int,
+        csrf: str = Form(""),
+    ) -> Response:
+        """Send the message to the admin themself (also proves Telegram accepts it)."""
+        auth.check_csrf(ctx, csrf)
+        campaign = await _campaign(session, campaign_id)
+        if campaigns_svc.validate(campaign):
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_invalid")
+        text, markup = campaigns_svc.render(campaign, None, settings, preview=True)
+        bot: Bot = request.app.state.bot
+        try:
+            await bot.send_message(ctx.user.telegram_id, text, reply_markup=markup)
+        except TelegramAPIError as exc:
+            log.info("Campaign %s test send failed: %s", campaign_id, exc)
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_test_failed")
+        return redirect(f"/admin/campaigns/{campaign_id}", "campaign_test_sent")
+
+    @router.post("/campaigns/{campaign_id}/confirm")
+    async def campaign_confirm(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        campaign_id: int,
+        csrf: str = Form(""),
+        expected: int = Form(-1),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        campaign = await session.get(Campaign, campaign_id, with_for_update=True)
+        if campaign is None:
+            raise HTTPException(404)
+        if campaign.status != "DRAFT":
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_locked")
+        current = await campaigns_svc.audience(session, campaign)
+        if current.final != expected:
+            # The audience changed since the page was shown: show the new numbers first.
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_audience_changed")
+        if await campaigns_svc.confirm(session, campaign, ctx.user) is None:
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_invalid")
+        await session.commit()
+        request.app.state.worker.wake()
+        return redirect(f"/admin/campaigns/{campaign_id}", "campaign_queued")
+
+    @router.post("/campaigns/{campaign_id}/delete")
+    async def campaign_delete(
+        session: DB, ctx: Admin, campaign_id: int, csrf: str = Form("")
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        campaign = await _campaign(session, campaign_id)
+        if campaign.status != "DRAFT":
+            return redirect(f"/admin/campaigns/{campaign_id}", "campaign_locked")
+        await session.delete(campaign)
+        return redirect("/admin/campaigns", "campaign_deleted")
 
     # ---------------- settings ----------------
 
     @router.get("/settings", response_class=HTMLResponse)
     async def settings_page(
-        request: Request, session: DB, ctx: Admin, find_admin: str = "", find_manager: str = ""
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        find_admin: str = "",
+        find_manager: str = "",
+        tab: str = "",
     ) -> Response:
+        if tab not in SETTINGS_TABS:
+            tab = "managers" if find_manager else "admins"
         admins = await svc.staff(session, ROLE_ADMIN)
         managers = await svc.staff(session, ROLE_MANAGER)
         bot_username = await _bot_username(request)
+        privacy_rows = await svc.privacy_requests(session)
         admin_found = await svc.find_registered(session, find_admin) if find_admin else None
         manager_found = await svc.find_registered(session, find_manager) if find_manager else None
         return render(
@@ -494,7 +699,8 @@ def create_router() -> APIRouter:
             managers=managers,
             invitations=await svc.pending_invitations(session),
             legal_versions=await svc.legal_versions(session),
-            privacy=await svc.privacy_requests(session),
+            privacy=privacy_rows,
+            privacy_open=sum(1 for r, _ in privacy_rows if r.status != "COMPLETED"),
             find_admin=find_admin,
             admin_found=admin_found,
             find_manager=find_manager,
@@ -503,6 +709,8 @@ def create_router() -> APIRouter:
             manager_ids={r.user.id for r in managers},
             bot_link=f"https://t.me/{bot_username}" if bot_username else None,
             today=datetime.now(UTC).date().isoformat(),
+            tab=tab,
+            tabs=SETTINGS_TABS,
         )
 
     @router.post("/settings/admins/invite")
@@ -513,6 +721,7 @@ def create_router() -> APIRouter:
         settings: SettingsDep,
         csrf: str = Form(""),
         user_id: int = Form(...),
+        next: str = Form(""),
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         invited = await session.get(User, user_id)
@@ -521,10 +730,13 @@ def create_router() -> APIRouter:
         invitation, status = await svc.create_invitation(session, invited, ctx.user)
         if status != "created" or invitation is None:
             msg = "already_admin" if status == "already_admin" else "invite_pending"
-            return redirect("/admin/settings", msg)
-        await session.commit()
-        delivered = await _send_invitation(request, invited, ctx.user, invitation.id)
-        return redirect("/admin/settings", "invited" if delivered else "invite_failed")
+        else:
+            await session.commit()
+            delivered = await _send_invitation(request, invited, ctx.user, invitation.id)
+            msg = "invited" if delivered else "invite_failed"
+        if _safe_next(next):
+            return redirect_back(next, msg)
+        return redirect("/admin/settings", msg, tab="admins")
 
     @router.post("/settings/invitations/{invitation_id}/cancel")
     async def cancel_invite(
@@ -532,7 +744,7 @@ def create_router() -> APIRouter:
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         await svc.cancel_invitation(session, invitation_id)
-        return redirect("/admin/settings", "cancelled")
+        return redirect("/admin/settings", "cancelled", tab="admins")
 
     @router.post("/settings/admins/{user_id}/remove")
     async def remove_admin(session: DB, ctx: Admin, user_id: int, csrf: str = Form("")) -> Response:
@@ -543,8 +755,8 @@ def create_router() -> APIRouter:
         try:
             await users_svc.revoke_role(session, user, ROLE_ADMIN, actor_user_id=ctx.user.id)
         except users_svc.LastAdminError:
-            return redirect("/admin/settings", "last_admin")
-        return redirect("/admin/settings", "admin_removed")
+            return redirect("/admin/settings", "last_admin", tab="admins")
+        return redirect("/admin/settings", "admin_removed", tab="admins")
 
     @router.post("/settings/{role}/{user_id}/notifications")
     async def toggle_notifications(
@@ -560,18 +772,25 @@ def create_router() -> APIRouter:
         if role_name is None:
             raise HTTPException(404)
         await svc.set_notifications(session, user_id, role_name, enabled == "1", ctx.user)
-        return redirect("/admin/settings", "saved")
+        return redirect("/admin/settings", "saved", tab=role)
 
     @router.post("/settings/managers/add")
     async def add_manager(
-        request: Request, session: DB, ctx: Admin, csrf: str = Form(""), user_id: int = Form(...)
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        csrf: str = Form(""),
+        user_id: int = Form(...),
+        next: str = Form(""),
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         user = await session.get(User, user_id)
         if user is None:
             raise HTTPException(404)
         msg = await _set_manager_role(request, session, ctx, user, grant=True)
-        return redirect("/admin/settings", msg)
+        if _safe_next(next):
+            return redirect_back(next, msg)
+        return redirect("/admin/settings", msg, tab="managers")
 
     @router.post("/settings/managers/{user_id}/remove")
     async def remove_manager(
@@ -582,7 +801,7 @@ def create_router() -> APIRouter:
         if user is None:
             raise HTTPException(404)
         msg = await _set_manager_role(request, session, ctx, user, grant=False)
-        return redirect("/admin/settings", msg)
+        return redirect("/admin/settings", msg, tab="managers")
 
     @router.post("/privacy/{request_id}/process")
     async def privacy_process(
@@ -600,10 +819,10 @@ def create_router() -> APIRouter:
         if result.error == "not_found":
             raise HTTPException(404)
         if result.error == "staff":
-            return redirect("/admin/settings#privacy", "privacy_staff")
+            return redirect("/admin/settings", "privacy_staff", tab="privacy")
         await session.commit()
         if not result.ok:
-            return redirect("/admin/settings#privacy", "privacy_failed")
+            return redirect("/admin/settings", "privacy_failed", tab="privacy")
         if result.user is not None:
             bot: Bot = request.app.state.bot
             try:
@@ -614,7 +833,7 @@ def create_router() -> APIRouter:
                 )
             except TelegramAPIError:
                 pass
-        return redirect("/admin/settings#privacy", "privacy_done")
+        return redirect("/admin/settings", "privacy_done", tab="privacy")
 
     @router.post("/settings/legal/publish")
     async def legal_publish(
@@ -636,18 +855,18 @@ def create_router() -> APIRouter:
             raise HTTPException(400)
         public_url = public_url.strip()
         if public_url and not public_url.startswith("https://"):
-            return redirect("/admin/settings", "bad_url")
+            return redirect("/admin/settings", "bad_url", tab="legal")
         content = None
         file_name = None
         if file is not None and file.filename:
             content = await file.read(MAX_LEGAL_FILE + 1)
             if len(content) > MAX_LEGAL_FILE:
-                return redirect("/admin/settings", "file_too_big")
+                return redirect("/admin/settings", "file_too_big", tab="legal")
             file_name = file.filename[:255]
         if not public_url and not content:
-            return redirect("/admin/settings", "url_or_file")
+            return redirect("/admin/settings", "url_or_file", tab="legal")
         if not public_url and not settings.public_base_url:
-            return redirect("/admin/settings", "bad_url")
+            return redirect("/admin/settings", "bad_url", tab="legal")
         effective = _parse_date(effective_date) or datetime.now(UTC).date()
         try:
             v = await legal.publish_version(
@@ -664,10 +883,10 @@ def create_router() -> APIRouter:
             )
         except ValueError:
             await session.rollback()
-            return redirect("/admin/settings", "version_exists")
+            return redirect("/admin/settings", "version_exists", tab="legal")
         if not public_url:
             v.public_url = f"{settings.public_base_url}/legal/{v.id}"
-        return redirect("/admin/settings", "published")
+        return redirect("/admin/settings", "published", tab="legal")
 
     @router.post("/settings/legal/{version_id}/url")
     async def legal_url(
@@ -675,9 +894,9 @@ def create_router() -> APIRouter:
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         if not public_url.startswith("https://"):
-            return redirect("/admin/settings", "bad_url")
+            return redirect("/admin/settings", "bad_url", tab="legal")
         await svc.change_public_url(session, version_id, public_url.strip(), ctx.user)
-        return redirect("/admin/settings", "saved")
+        return redirect("/admin/settings", "saved", tab="legal")
 
     @router.get("/settings/legal/{version_id}/file")
     async def legal_file(session: DB, ctx: Admin, version_id: int) -> Response:

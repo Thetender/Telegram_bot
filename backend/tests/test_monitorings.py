@@ -89,13 +89,14 @@ async def test_create_from_search_with_typed_name(harness):
     await say(h, "  Мій   склад ")
     rows = await local(h)
     assert [(r.name, r.params) for r in rows] == [("Мій склад", {"auction_type": "sale"})]
-    assert h.tg.texts()[-1].startswith("Моніторинг «<b>Мій склад</b>» створено ✅")
+    assert h.tg.texts()[-2].startswith("Моніторинг «<b>Мій склад</b>» створено ✅")
+    assert h.tg.texts()[-1] == t.MAIN_MENU  # straight back to the main menu
     create = [c for c in h.tender.calls if c[0] == "monitoring_create"][-1][1]
     assert create["user_id"] == str(UID) and create["name"] == "Мій склад"
     async with h.sf() as s:
         assert await s.scalar(select(Event).where(Event.event_type == "MONITOR_CREATED"))
-    # The search draft is untouched.
-    assert await draft(h) == {"auction_type": "sale"}
+    # The search that became a monitoring is cleared for the next one.
+    assert await draft(h) == {}
 
 
 async def test_create_with_suggested_name_and_results_of_monitoring(harness):
@@ -145,7 +146,7 @@ async def test_ambiguous_create_is_reconciled_not_duplicated(harness):
     creates = [c for c in h.tender.calls if c[0] == "monitoring_create"]
     assert len(creates) == 1  # no blind second create
     assert [r.name for r in await local(h)] == ["Склади"]  # adopted from the list
-    assert "створено ✅" in h.tg.texts()[-1]
+    assert "створено ✅" in h.tg.texts()[-2]
 
 
 async def test_list_detail_edit_save_rename_delete(harness):

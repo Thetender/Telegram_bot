@@ -328,6 +328,66 @@ class NotificationDelivery(Base):
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
+class Campaign(Base):
+    """Marketing message from the Dashboard (FR §13). The recipient list is
+    materialized (campaign_recipients) at confirmation: an immutable snapshot."""
+
+    __tablename__ = "campaigns"
+    __table_args__ = (
+        CheckConstraint("status IN ('DRAFT','SENDING','DONE')", name="status_valid"),
+        CheckConstraint("audience_type IN ('ALL','SELECTED')", name="audience_type_valid"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    button_text: Mapped[str | None] = mapped_column(String(64))
+    button_url: Mapped[str | None] = mapped_column(Text)
+    audience_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ALL")
+    selected_user_ids: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="DRAFT")
+    # Audience counts captured at confirmation.
+    audience_total: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    opted_out_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    unreachable_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    recipients_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CampaignRecipient(Base):
+    __tablename__ = "campaign_recipients"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "user_id", name="uq_campaign_recipient"),
+        CheckConstraint(
+            "status IN ('PENDING','SENDING','SENT','FAILED','SKIPPED')", name="status_valid"
+        ),
+        Index("ix_campaign_recipients_queue", "status", "next_attempt_at"),
+        Index("ix_campaign_recipients_campaign", "campaign_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="PENDING")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = utcnow_column(nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
 class SearchSnapshot(Base):
     """Immutable filter set of an executed search. Result buttons reference it."""
 
@@ -457,6 +517,8 @@ class AdminInvitation(Base):
 
 
 __all__ = [
+    "Campaign",
+    "CampaignRecipient",
     "Monitoring",
     "MonitoringEditDraft",
     "NotificationDelivery",

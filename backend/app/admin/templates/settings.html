@@ -30,7 +30,11 @@
 {% endmacro %}
 {% block content %}
 <h1>⚙️ Налаштування</h1>
+<div class="tabs">
+  {% for key, label in tabs.items() %}<a href="/admin/settings?tab={{ key }}" class="{{ 'active' if tab == key }}">{{ label }}{% if key == 'privacy' and privacy_open %}<span class="count">{{ privacy_open }}</span>{% endif %}</a>{% endfor %}
+</div>
 
+{% if tab == "admins" %}
 <div class="section" id="admins">
   <h2>Адміністратори</h2>
   {{ staff_table(admins, 'admins', 'Прибрати', 'Системні повідомлення в Telegram', True) }}
@@ -42,6 +46,7 @@
   {% endfor %}</ul>
   {% endif %}
   <form class="filters" method="get" action="/admin/settings#admins" style="margin-top:12px">
+    <input type="hidden" name="tab" value="admins">
     <label>+ Додати адміністратора<input type="search" name="find_admin" value="{{ find_admin }}" placeholder="@username або телефон користувача бота"></label>
     <button type="submit" class="secondary">Знайти</button>
   </form>
@@ -54,11 +59,14 @@
     {% else %}<div class="flash info">Користувача не знайдено. Попросіть його спершу відкрити бота і зареєструватися (поділитися телефоном), потім спробуйте ще раз.</div>{% endif %}
   {% endif %}
 </div>
+{% endif %}
 
+{% if tab == "managers" %}
 <div class="section" id="managers">
   <h2>Менеджери</h2>
   {{ staff_table(managers, 'managers', 'Зняти роль', 'Сповіщення про консультації', False) }}
   <form class="filters" method="get" action="/admin/settings#managers" style="margin-top:12px">
+    <input type="hidden" name="tab" value="managers">
     <label>+ Додати менеджера<input type="search" name="find_manager" value="{{ find_manager }}" placeholder="@username або телефон користувача бота"></label>
     <button type="submit" class="secondary">Знайти</button>
   </form>
@@ -81,7 +89,9 @@
   </div>
   {% endif %}
 </div>
+{% endif %}
 
+{% if tab == "legal" %}
 <div class="section" id="legal">
   <h2>Юридичні документи</h2>
   <p class="muted">Кожна версія незмінна. Зміна лише посилання не створює нової версії. Нова версія автоматично стає активною, попередня — архівною.</p>
@@ -120,7 +130,9 @@
   {% endfor %}
   </div>
 </div>
+{% endif %}
 
+{% if tab == "privacy" %}
 <div class="section" id="privacy">
   <h2>Запити на видалення персональних даних</h2>
   <p class="muted">«Виконати видалення»: спершу видаляються всі моніторинги користувача на The Tender, і лише після цього знеособлюються його дані в боті (ім'я, телефон, username, контакти в заявках, чернетки). Якщо The Tender не відповів — запит лишається «В роботі», дію можна безпечно повторити.</p>
@@ -141,4 +153,5 @@
           </form>{% endif %}</td></tr>
     {% else %}<tr><td colspan="5" class="muted">Запитів немає.</td></tr>{% endfor %}</tbody></table></div>
 </div>
+{% endif %}
 {% endblock %}

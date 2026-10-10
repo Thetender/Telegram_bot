@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -34,6 +34,7 @@ from app.services import access as access_svc
 from app.services import admin as svc
 from app.services import consultations as consult_svc
 from app.services import events, legal
+from app.services import privacy as privacy_svc
 from app.services import users as users_svc
 from app.services.search_params import summary_lines
 
@@ -77,7 +78,14 @@ EVENT_LABELS = {
     events.SETTINGS_CHANGED: "Змінено налаштування",
     events.USER_ACCESS_BLOCKED: "⛔️ Доступ до бота закрито",
     events.USER_ACCESS_UNBLOCKED: "Доступ до бота відновлено",
+    events.LEGAL_ACCEPTED: "Підтвердив оновлені юр. документи",
+    events.PRIVACY_REQUEST_COMPLETED: "Персональні дані видалено",
 }
+DATA_DELETED_TEXT = (
+    "Ваші персональні дані видалено ✅\n\n"
+    "Моніторинги видалено, бот більше не надсилатиме вам повідомлень. "
+    "Щоб знову скористатися сервісом, натисніть /start."
+)
 FLASH = {
     "invited": ("ok", "Запрошення надіслано в бот. Роль стане активною після підтвердження."),
     "invite_pending": ("info", "Цьому користувачу вже надіслано запрошення."),
@@ -90,6 +98,19 @@ FLASH = {
     "admin_removed": ("ok", "Адміністратора прибрано."),
     "manager_added": ("ok", "Роль менеджера надано."),
     "manager_removed": ("ok", "Роль менеджера знято."),
+    "privacy_done": (
+        "ok",
+        "Моніторинги користувача видалено на The Tender, персональні дані знеособлено ✅",
+    ),
+    "privacy_failed": (
+        "warn",
+        "Не вдалося видалити моніторинги на The Tender — запит лишається «В роботі». "
+        "Спробуйте «Повторити» пізніше (деталі помилки — в таблиці).",
+    ),
+    "privacy_staff": (
+        "warn",
+        "Це адміністратор або менеджер — спершу зніміть роль, потім виконайте видалення.",
+    ),
     "manager_added_unnotified": (
         "warn",
         "Роль менеджера надано, але бот не зміг надіслати людині повідомлення "
@@ -562,6 +583,38 @@ def create_router() -> APIRouter:
         msg = await _set_manager_role(request, session, ctx, user, grant=False)
         return redirect("/admin/settings", msg)
 
+    @router.post("/privacy/{request_id}/process")
+    async def privacy_process(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        settings: SettingsDep,
+        request_id: int,
+        csrf: str = Form(""),
+    ) -> Response:
+        """«Виконати / Повторити видалення»: remote monitorings first, then local data."""
+        auth.check_csrf(ctx, csrf)
+        tender = request.app.state.tender
+        result = await privacy_svc.process_deletion(session, tender, request_id, ctx.user)
+        if result.error == "not_found":
+            raise HTTPException(404)
+        if result.error == "staff":
+            return redirect("/admin/settings#privacy", "privacy_staff")
+        await session.commit()
+        if not result.ok:
+            return redirect("/admin/settings#privacy", "privacy_failed")
+        if result.user is not None:
+            bot: Bot = request.app.state.bot
+            try:
+                await bot.send_message(
+                    result.user.telegram_id,
+                    DATA_DELETED_TEXT,
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+            except TelegramAPIError:
+                pass
+        return redirect("/admin/settings#privacy", "privacy_done")
+
     @router.post("/settings/legal/publish")
     async def legal_publish(
         session: DB,
@@ -673,7 +726,10 @@ async def _set_manager_role(
         text = t.MANAGER_REVOKED
     bot: Bot = request.app.state.bot
     try:
-        await bot.send_message(user.telegram_id, text, reply_markup=kb.main_menu(roles))
+        await bot.send_message(user.telegram_id, text)
+        # Separate message with the keyboard: some Telegram apps keep showing the
+        # old menu when the keyboard comes with a long text message.
+        await bot.send_message(user.telegram_id, t.MENU_UPDATED, reply_markup=kb.main_menu(roles))
     except TelegramAPIError as exc:
         log.info("Manager role message to user %s not delivered: %s", user.id, exc)
         if grant:

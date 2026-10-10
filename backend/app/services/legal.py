@@ -43,6 +43,49 @@ async def get_active_versions(session: AsyncSession) -> dict[str, ActiveLegalVer
     return result
 
 
+async def pending_reacceptance(
+    session: AsyncSession, user_id: int
+) -> list[ActiveLegalVersion]:
+    """Active versions marked «потребує повторного підтвердження» that this
+    user has not accepted yet. Non-empty → interactive functions are gated."""
+    accepted = select(UserLegalAcceptance.legal_document_version_id).where(
+        UserLegalAcceptance.user_id == user_id
+    )
+    rows = await session.execute(
+        select(LegalDocument.doc_type, LegalDocumentVersion)
+        .join(LegalDocumentVersion, LegalDocumentVersion.document_id == LegalDocument.id)
+        .where(
+            LegalDocumentVersion.status == "ACTIVE",
+            LegalDocumentVersion.require_reacceptance.is_(True),
+            LegalDocumentVersion.id.not_in(accepted),
+        )
+        .order_by(LegalDocument.doc_type.desc())  # TERMS before PRIVACY
+    )
+    return [
+        ActiveLegalVersion(
+            id=v.id,
+            doc_type=doc_type,
+            version=v.version,
+            public_url=v.public_url,
+            require_reacceptance=True,
+        )
+        for doc_type, v in rows
+    ]
+
+
+async def accept_pending(session: AsyncSession, user_id: int) -> list[ActiveLegalVersion]:
+    pending = await pending_reacceptance(session, user_id)
+    if pending:
+        await record_acceptance(session, user_id, [v.id for v in pending])
+        await events.log_event(
+            session,
+            events.LEGAL_ACCEPTED,
+            user_id=user_id,
+            data={"versions": [f"{v.doc_type} {v.version}" for v in pending]},
+        )
+    return pending
+
+
 async def record_acceptance(session: AsyncSession, user_id: int, version_ids: list[int]) -> None:
     for vid in version_ids:
         await session.execute(

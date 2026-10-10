@@ -111,7 +111,7 @@
           </div>
           <label class="filters" style="display:block">Публічне посилання<br><input type="url" name="public_url" placeholder="https://thetender.com.ua/..." required style="width:100%"></label>
           <label>Копія документа (PDF/DOCX, необов'язково, до 10 МБ)<br><input type="file" name="file"></label>
-          <label><input type="checkbox" name="reaccept" value="1"> Потребує повторного підтвердження користувачами <span class="muted">(запрацює в Iteration 6)</span></label>
+          <label><input type="checkbox" name="reaccept" value="1"> Потребує повторного підтвердження користувачами <span class="muted">— користувачі не зможуть користуватися ботом, доки не підтвердять нову редакцію (сповіщення про аукціони надходитимуть)</span></label>
           <button type="submit">Опублікувати</button>
         </form>
       </details>
@@ -122,12 +122,22 @@
 
 <div class="section" id="privacy">
   <h2>Запити на видалення персональних даних</h2>
-  <p class="muted">Обробка (видалення моніторингів через API і знеособлення даних) з'явиться в Iteration 6.</p>
+  <p class="muted">«Виконати видалення»: спершу видаляються всі моніторинги користувача на The Tender, і лише після цього знеособлюються його дані в боті (ім'я, телефон, username, контакти в заявках, чернетки). Якщо The Tender не відповів — запит лишається «В роботі», дію можна безпечно повторити.</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Користувач</th><th>Створено</th><th>Статус</th></tr></thead>
+    <thead><tr><th>Користувач</th><th>Створено</th><th>Статус</th><th>Спроб</th><th></th></tr></thead>
     <tbody>{% for r, u in privacy %}
-      <tr><td><a href="/admin/users/{{ u.id }}">{{ u.name or '—' }}</a></td><td>{{ fmt_dt(r.created_at) }}</td>
-        <td><span class="badge {{ 'NEW' if r.status == 'NEW' else ('IN_PROGRESS' if r.status == 'IN_PROGRESS' else 'COMPLETED') }}">{{ {'NEW':'Новий','IN_PROGRESS':'В роботі','COMPLETED':'Виконано'}[r.status] }}</span></td></tr>
-    {% else %}<tr><td colspan="3" class="muted">Запитів немає.</td></tr>{% endfor %}</tbody></table></div>
+      <tr><td><a href="/admin/users/{{ u.id }}">{{ u.name or ('знеособлено' if u.anonymized_at else '—') }}</a>{% if u.phone %}<br><span class="muted">{{ u.phone }}</span>{% endif %}</td>
+        <td>{{ fmt_dt(r.created_at) }}</td>
+        <td><span class="badge {{ 'NEW' if r.status == 'NEW' else ('IN_PROGRESS' if r.status == 'IN_PROGRESS' else 'COMPLETED') }}">{{ {'NEW':'Новий','IN_PROGRESS':'В роботі','COMPLETED':'Виконано'}[r.status] }}</span>
+          {% if r.status == 'COMPLETED' %}<br><span class="muted">{{ fmt_dt(r.completed_at) }}</span>{% endif %}
+          {% if r.last_error %}<br><span class="muted" style="color:var(--danger)">{{ r.last_error }}</span>{% endif %}</td>
+        <td>{{ r.attempts }}</td>
+        <td>{% if r.status != 'COMPLETED' %}
+          <form class="inline" method="post" action="/admin/privacy/{{ r.id }}/process"
+                onsubmit="return confirm('Видалити моніторинги користувача на The Tender і знеособити його дані? Дію не можна скасувати.')">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="danger small" type="submit">{{ 'Повторити' if r.attempts else 'Виконати видалення' }}</button>
+          </form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Запитів немає.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endblock %}

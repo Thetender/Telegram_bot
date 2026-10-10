@@ -170,18 +170,19 @@ async def test_manager_role_and_last_admin_protection(session_factory):
         )
         async with d.sf() as s:
             assert ROLE_MANAGER in await users_svc.get_roles(s, client.id)
-        (note,) = [m for m in d.tg.requests if isinstance(m, SendMessage)]
+        note, menu_msg = [m for m in d.tg.requests if isinstance(m, SendMessage)]
         assert int(note.chat_id) == CLIENT_TG and note.text.startswith("👋 Вітаємо!")
         assert "Зараз є заявки без менеджера: <b>1</b>" in note.text
-        menu = [b.text for row in note.reply_markup.keyboard for b in row]
+        menu = [b.text for row in menu_msg.reply_markup.keyboard for b in row]
         assert "📋 Мої заявки" in menu
         d.tg.clear()
         await d.client.post(
             f"/admin/users/{client.id}/manager", data={"csrf": csrf, "action": "revoke"}
         )
-        (note,) = [m for m in d.tg.requests if isinstance(m, SendMessage)]
-        assert note.text.startswith("Роль менеджера The Tender знято")
-        assert "📋 Мої заявки" not in [b.text for row in note.reply_markup.keyboard for b in row]
+        note, menu_msg = [m for m in d.tg.requests if isinstance(m, SendMessage)]
+        assert note.text == "Роль менеджера The Tender знято. Дякуємо!"
+        menu = [b.text for row in menu_msg.reply_markup.keyboard for b in row]
+        assert "📋 Мої заявки" not in menu
         async with d.sf() as s:
             assert ROLE_MANAGER not in await users_svc.get_roles(s, client.id)
             audit = (await s.scalars(select(Event).where(Event.event_type == "ROLE_REVOKED"))).all()

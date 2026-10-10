@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -12,12 +13,24 @@ from aiogram.types import User as TgUser
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import ProcessedUpdate, User
+from app.services import legal
 from app.services import users as users_svc
 
 log = logging.getLogger(__name__)
+
+
+# Callbacks still available while new Terms/Privacy wait for confirmation:
+# accept, marketing preference and the personal-data deletion request.
+_GATE_ALLOWED_CALLBACKS = ("lg:", "mk:", "pd:", "h:settings", "h:delete")
+
+
+def _allowed_during_legal_gate(event: Update) -> bool:
+    cq = event.callback_query
+    return cq is not None and (cq.data or "").startswith(_GATE_ALLOWED_CALLBACKS)
 
 
 class UpdateContextMiddleware(BaseMiddleware):
@@ -71,6 +84,13 @@ class UpdateContextMiddleware(BaseMiddleware):
                 await session.commit()
                 return None
 
+            if user is not None and not _allowed_during_legal_gate(event):
+                pending = await legal.pending_reacceptance(session, user.id)
+                if pending:
+                    await self._show_legal_gate(data, event, user, pending)
+                    await session.commit()
+                    return None
+
             data["session"] = session
             data["user"] = user
             data["roles"] = roles
@@ -81,6 +101,27 @@ class UpdateContextMiddleware(BaseMiddleware):
                 raise
             await session.commit()
             return result
+
+    @staticmethod
+    async def _show_legal_gate(
+        data: dict[str, Any], event: Update, user: User, pending: list
+    ) -> None:
+        """New Terms/Privacy require confirmation: interactive functions wait
+        until the user accepts (FR §3.3). Notifications keep working."""
+        bot: Bot | None = data.get("bot")
+        if bot is None:
+            return
+        if event.callback_query is not None:
+            with contextlib.suppress(TelegramAPIError):
+                await bot.answer_callback_query(event.callback_query.id)
+        key = tuple(sorted({v.doc_type for v in pending}))
+        text = t.LEGAL_GATE.format(
+            docs=t.LEGAL_DOC_NAMES.get(key, t.LEGAL_DOC_NAMES[("PRIVACY", "TERMS")])
+        )
+        try:
+            await bot.send_message(user.telegram_id, text, reply_markup=kb.legal_gate(pending))
+        except TelegramAPIError as exc:
+            log.info("Legal gate for %s not sent: %s", user.id, exc)
 
     @staticmethod
     async def _notify_blocked(data: dict[str, Any], user: User, session: AsyncSession) -> None:

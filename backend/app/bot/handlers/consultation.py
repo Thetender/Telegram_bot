@@ -134,11 +134,11 @@ async def show_my_requests(
     edit: CallbackQuery | None = None,
 ) -> None:
     items = await svc.manager_requests(session, user.id, active=active)
-    lines = [t.MY_REQUESTS_TITLE, "", f"<b>{t.BTN_ACTIVE if active else t.BTN_DONE}</b>"]
+    lines = [t.MY_REQUESTS_TITLE, "", f"<b>{t.BTN_ACTIVE if active else t.BTN_COMPLETED}</b>"]
     rows = [
         [
             _btn(("• " if active else "") + t.BTN_ACTIVE, "list", v="a"),
-            _btn(("" if active else "• ") + t.BTN_DONE, "list", v="d"),
+            _btn(("" if active else "• ") + t.BTN_COMPLETED, "list", v="d"),
         ]
     ]
     if not items:

@@ -11,6 +11,7 @@
       <option value="">будь-коли</option>
       {% for d, label in [('1','за добу'),('7','за 7 днів'),('30','за 30 днів')] %}<option value="{{ d }}" {{ 'selected' if active == d }}>{{ label }}</option>{% endfor %}
     </select></label>
+  <label class="check"><input type="checkbox" name="blocked" value="1" {{ 'checked' if blocked == '1' }}> Лише заблоковані</label>
   <button type="submit">Знайти</button>
   {% if base_query %}<a class="btn secondary" href="/admin/users">Скинути</a>{% endif %}
 </form>
@@ -20,7 +21,8 @@
   {% for u, roles in rows %}
     <tr>
       <td><a href="/admin/users/{{ u.id }}">{{ u.name or '—' }}</a>
-        {% for r in roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}</td>
+        {% for r in roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}
+        {% if u.access_blocked_at %}<span class="badge BLOCKED">⛔️ Заблоковано</span>{% endif %}</td>
       <td>{{ u.phone or '—' }}</td>
       <td>{% if u.username %}@{{ u.username }}<br>{% endif %}<span class="muted">{{ u.telegram_id }}</span></td>
       <td>{{ fmt_dt(u.registered_at) }}</td>

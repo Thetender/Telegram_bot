@@ -5,13 +5,16 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Update
+from aiogram import BaseMiddleware, Bot
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import ReplyKeyboardRemove, TelegramObject, Update
 from aiogram.types import User as TgUser
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import ProcessedUpdate
+from app.bot import texts as t
+from app.config import Settings
+from app.models import ProcessedUpdate, User
 from app.services import users as users_svc
 
 log = logging.getLogger(__name__)
@@ -62,6 +65,12 @@ class UpdateContextMiddleware(BaseMiddleware):
                         user.username = tg_user.username
                     roles = await users_svc.get_roles(session, user.id)
 
+            if user is not None and user.is_access_blocked:
+                # Access closed by an administrator: one short notice, then silence.
+                await self._notify_blocked(data, user, session)
+                await session.commit()
+                return None
+
             data["session"] = session
             data["user"] = user
             data["roles"] = roles
@@ -72,3 +81,22 @@ class UpdateContextMiddleware(BaseMiddleware):
                 raise
             await session.commit()
             return result
+
+    @staticmethod
+    async def _notify_blocked(data: dict[str, Any], user: User, session: AsyncSession) -> None:
+        if user.access_block_notified_at is not None:
+            return
+        bot: Bot | None = data.get("bot")
+        settings: Settings | None = data.get("settings")
+        if bot is None:
+            return
+        phone = settings.consultation_phone if settings else ""
+        try:
+            await bot.send_message(
+                user.telegram_id,
+                t.ACCESS_BLOCKED.format(phone=phone),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        except TelegramAPIError as exc:
+            log.info("Blocked-access notice to %s not sent: %s", user.id, exc)
+        user.access_block_notified_at = datetime.now(UTC)

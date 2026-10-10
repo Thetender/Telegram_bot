@@ -50,6 +50,7 @@ tr:last-child td { border-bottom: none; }
 .badge.COMPLETED { background: #ecfdf3; color: #067647; }
 .badge.CLOSED_BY_ADMIN { background: #f2f4f7; color: #475467; }
 .badge.ADMIN { background: #fde7f3; color: #c11574; }
+.badge.BLOCKED { background: #fef3f2; color: #b42318; }
 .badge.MANAGER { background: #eef4ff; color: #3538cd; }
 form.inline { display: inline; margin: 0; }
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
@@ -90,3 +91,5 @@ dl.kv dd { margin: 0; }
   .filters label { width: 100%; }
   dl.kv { grid-template-columns: 1fr; }
 }
+
+.filters label.check { flex-direction: row; align-items: center; gap: 6px; }

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from app.admin import auth
+from app.bot.handlers import consultation as consult_ui
 from app.config import Settings
 from app.models import (
     ROLE_ADMIN,
@@ -29,8 +30,8 @@ from app.models import (
     LegalDocumentVersion,
     User,
 )
+from app.services import access as access_svc
 from app.services import admin as svc
-from app.services import consultations as consult_svc
 from app.services import events, legal
 from app.services import users as users_svc
 
@@ -72,6 +73,8 @@ EVENT_LABELS = {
     events.LEGAL_VERSION_PUBLISHED: "Опубліковано юр. документ",
     events.LEGAL_URL_CHANGED: "Змінено посилання на юр. документ",
     events.SETTINGS_CHANGED: "Змінено налаштування",
+    events.USER_ACCESS_BLOCKED: "⛔️ Доступ до бота закрито",
+    events.USER_ACCESS_UNBLOCKED: "Доступ до бота відновлено",
 }
 FLASH = {
     "invited": ("ok", "Запрошення надіслано в бот. Роль стане активною після підтвердження."),
@@ -89,6 +92,13 @@ FLASH = {
     "closed": ("ok", "Заявку закрито адміністратором."),
     "not_closed": ("warn", "Заявку вже завершено або закрито."),
     "corrected": ("ok", "Результат виправлено (зміну записано в журнал)."),
+    "blocked": ("ok", "Доступ до бота закрито. Відкриті заявки користувача закрито."),
+    "unblocked": ("ok", "Доступ до бота відновлено."),
+    "block_staff": (
+        "warn",
+        "Не можна заблокувати адміністратора чи менеджера — спершу зніміть роль.",
+    ),
+    "block_self": ("warn", "Не можна заблокувати самого себе."),
     "published": ("ok", "Нову версію опубліковано."),
     "version_exists": ("warn", "Така версія вже існує. Версії незмінні — вкажіть новий номер."),
     "bad_url": ("warn", "Посилання має починатися з https://"),
@@ -248,6 +258,7 @@ def create_router() -> APIRouter:
         reg_from: str = "",
         reg_to: str = "",
         active: str = "",
+        blocked: str = "",
         page: int = 1,
     ) -> Response:
         rows, total = await svc.list_users(
@@ -256,6 +267,7 @@ def create_router() -> APIRouter:
             registered_from=_parse_date(reg_from),
             registered_to=_parse_date(reg_to),
             active_days=int(active) if active.isdigit() else None,
+            blocked_only=blocked == "1",
             page=page,
         )
         pages = max(1, -(-total // svc.PAGE_SIZE))
@@ -267,6 +279,7 @@ def create_router() -> APIRouter:
                     "reg_from": reg_from,
                     "reg_to": reg_to,
                     "active": active,
+                    "blocked": blocked,
                 }.items()
                 if v
             }
@@ -284,6 +297,7 @@ def create_router() -> APIRouter:
             reg_from=reg_from,
             reg_to=reg_to,
             active=active,
+            blocked=blocked,
             base_query=base_query,
         )
 
@@ -292,7 +306,45 @@ def create_router() -> APIRouter:
         profile = await svc.user_profile(session, user_id)
         if profile is None:
             raise HTTPException(404)
-        return render(request, "user.html", ctx, "users", p=profile)
+        blocked_by = (
+            await session.get(User, profile.user.access_blocked_by)
+            if profile.user.access_blocked_by
+            else None
+        )
+        return render(request, "user.html", ctx, "users", p=profile, blocked_by=blocked_by)
+
+    @router.post("/users/{user_id}/access")
+    async def user_access(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        settings: SettingsDep,
+        user_id: int,
+        csrf: str = Form(""),
+        action: str = Form(""),
+        reason: str = Form(""),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        target = await session.get(User, user_id)
+        if target is None:
+            raise HTTPException(404)
+        if action == "unblock":
+            await access_svc.unblock_user(session, target, ctx.user)
+            await session.commit()
+            return redirect(f"/admin/users/{user_id}", "unblocked")
+        if action != "block":
+            raise HTTPException(400)
+        outcome, closed = await access_svc.block_user(session, target, ctx.user, reason)
+        if outcome in (access_svc.BlockResult.STAFF, access_svc.BlockResult.SELF):
+            return redirect(f"/admin/users/{user_id}", f"block_{outcome.value}")
+        await session.commit()
+        bot: Bot = request.app.state.bot
+        for request_id in closed:
+            req = await session.get(ConsultationRequest, request_id)
+            if req is not None:
+                await consult_ui.refresh_staff_messages(bot, session, settings, req)
+        await session.commit()
+        return redirect(f"/admin/users/{user_id}", "blocked")
 
     @router.post("/users/{user_id}/manager")
     async def user_manager_role(
@@ -365,7 +417,12 @@ def create_router() -> APIRouter:
         if not await svc.close_consultation(session, request_id, ctx.user):
             return redirect(f"/admin/consultations/{request_id}", "not_closed")
         await session.commit()
-        await _update_manager_messages(request, session, settings, request_id)
+        req = await session.get(ConsultationRequest, request_id)
+        if req is not None:
+            await session.refresh(req)
+            bot: Bot = request.app.state.bot
+            await consult_ui.refresh_staff_messages(bot, session, settings, req)
+            await session.commit()
         return redirect(f"/admin/consultations/{request_id}", "closed")
 
     @router.post("/consultations/{request_id}/result")
@@ -631,25 +688,3 @@ async def _send_invitation(
     except TelegramAPIError as exc:
         log.warning("Admin invitation %s not delivered: %s", invitation_id, exc)
         return False
-
-
-async def _update_manager_messages(
-    request: Request, session: AsyncSession, settings: Settings, request_id: int
-) -> None:
-    from app.bot import texts as t
-    from app.bot.handlers.consultation import request_card
-
-    bot: Bot = request.app.state.bot
-    req = await session.get(ConsultationRequest, request_id)
-    if req is None:
-        return
-    text = f"{request_card(req, settings.timezone)}\n\n{t.REQ_CLOSED_BY_ADMIN}"
-    for note in await consult_svc.notifications_for(session, request_id):
-        if note.message_id is None:
-            continue
-        try:
-            await bot.edit_message_text(
-                text=text, chat_id=note.chat_id, message_id=note.message_id, reply_markup=None
-            )
-        except TelegramAPIError:
-            pass

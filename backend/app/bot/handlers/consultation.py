@@ -179,6 +179,28 @@ def status_tail(
     return "", InlineKeyboardMarkup(inline_keyboard=[[_btn(t.BTN_CLAIM, "claim", req.id)]])
 
 
+async def refresh_staff_messages(
+    bot: Bot, session: AsyncSession, settings: Settings, req: ConsultationRequest
+) -> None:
+    """Re-render every staff message about the request for its current status
+    (used after an administrator changed the status in the dashboard)."""
+    card = request_card(req, settings.timezone)
+    manager = await session.get(User, req.claimed_by) if req.claimed_by else None
+    for note in await svc.notifications_for(session, req.id):
+        if note.message_id is None:
+            continue
+        viewer = await session.get(User, note.recipient_user_id)
+        if viewer is None:
+            continue
+        tail, markup = status_tail(req, manager.name if manager else None, viewer)
+        if note.kind == "ADMIN_FALLBACK":
+            markup = None  # admins without the manager role cannot claim
+            if req.status == "NEW":
+                tail = t.ADMIN_FALLBACK_HEADER
+        text = f"{card}\n\n{tail}" if tail else card
+        await _safe_edit(bot, note.chat_id, note.message_id, text, markup)
+
+
 def create_router() -> Router:
     router = Router(name="consultation")
     router.message.filter(filters.registered)

@@ -271,6 +271,17 @@ async def test_change_params_from_old_result_asks_before_overwriting(harness):
     assert (await draft(h))["auction_type"] == "rent"  # not overwritten yet
     await h.feed(callback_update(UID, RCb(a="editok", s=snap_a.id).pack()))
     assert (await draft(h))["auction_type"] == "sale"
+    assert t.CHOOSE_PARAM in h.tg.texts()[-1]  # straight to the grid
+
+
+async def test_change_params_opens_grid_directly(harness):
+    h = harness
+    await register(h)
+    snap = await run_search(h, auction_type="sale")
+    h.tg.clear()
+    await h.feed(callback_update(UID, RCb(a="edit", s=snap.id).pack()))
+    assert t.CHOOSE_PARAM in h.tg.texts()[-1]
+    assert "✅ Продаж / Оренда" in labels(h) and labels(h)[-1] == t.BTN_BACK
 
 
 async def test_new_search_without_unsaved_changes_clears_immediately(harness):

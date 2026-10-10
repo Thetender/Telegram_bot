@@ -231,6 +231,6 @@ ADMIN_FALLBACK_HEADER = (
 
 MY_REQUESTS_TITLE = "📋 <b>Мої заявки</b>"
 BTN_ACTIVE = "🟡 В роботі"
-BTN_DONE = "✅ Завершені"
+BTN_COMPLETED = "✅ Завершені"
 MY_REQUESTS_EMPTY_ACTIVE = "Зараз у вас немає заявок в роботі."
 MY_REQUESTS_EMPTY_DONE = "Завершених заявок ще немає."

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ p.user.name or 'Користувач' }}{% endblock %}
+{% block content %}
+<p><a href="/admin/users">← Користувачі</a></p>
+<h1>{{ p.user.name or '—' }}
+  {% for r in p.roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}</h1>
+<div class="grid2">
+  <div class="card">
+    <dl class="kv">
+      <dt>Телефон</dt><dd>{{ p.user.phone or '—' }}</dd>
+      <dt>Telegram</dt><dd>{% if p.user.username %}@{{ p.user.username }} · {% endif %}{{ p.user.telegram_id }}</dd>
+      <dt>Реєстрація</dt><dd>{{ fmt_dt(p.user.registered_at) }}</dd>
+      <dt>Остання активність</dt><dd>{{ fmt_dt(p.user.last_activity_at) }}</dd>
+      <dt>Маркетинг</dt><dd>{{ 'Вимкнено' if p.user.marketing_opt_out_at else 'Увімкнено' }}</dd>
+      <dt>Бот заблоковано</dt><dd>{{ fmt_dt(p.user.bot_blocked_at) if p.user.bot_blocked_at else 'Ні' }}</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <dl class="kv">
+      <dt>Пошуків</dt><dd>{{ p.searches }}</dd>
+      <dt>Консультацій</dt><dd>{{ p.consultations|length }}</dd>
+      <dt>Моніторингів</dt><dd class="muted">— (Iteration 5)</dd>
+    </dl>
+    <div style="margin-top:14px" class="row-actions">
+      <form class="inline" method="post" action="/admin/users/{{ p.user.id }}/manager">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        {% if 'MANAGER' in p.roles %}
+          <input type="hidden" name="action" value="revoke"><button class="danger small" type="submit">Зняти роль менеджера</button>
+        {% else %}
+          <input type="hidden" name="action" value="grant"><button class="secondary small" type="submit">Призначити менеджером</button>
+        {% endif %}
+      </form>
+      <a class="btn secondary small" href="/admin/settings">Адміністратори →</a>
+    </div>
+  </div>
+</div>
+{% if p.consultations %}
+<h2>Консультації</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>№</th><th>Створено</th><th>Статус</th><th>Результат</th></tr></thead>
+  <tbody>{% for c in p.consultations %}
+    <tr><td><a href="/admin/consultations/{{ c.id }}">№{{ c.id }}</a></td><td>{{ fmt_dt(c.created_at) }}</td>
+      <td><span class="badge {{ c.status }}">{{ status_labels[c.status] }}</span></td>
+      <td>{{ result_labels.get(c.result, '—') }}</td></tr>
+  {% endfor %}</tbody></table></div>
+{% endif %}
+<h2>Історія дій</h2>
+<div class="card">
+  <ul class="timeline">
+  {% for e in p.timeline %}
+    <li><time>{{ fmt_dt(e.created_at) }}</time>
+      <span>{{ event_labels.get(e.event_type, e.event_type) }}
+        {% if e.event_data.get('items_count') is not none %}<span class="muted">· знайдено {{ e.event_data['items_count'] }}</span>{% endif %}
+        {% if e.event_data.get('role') %}<span class="muted">· {{ e.event_data['role'] }}</span>{% endif %}
+        {% if e.event_data.get('request_id') %}<span class="muted">· заявка №{{ e.event_data['request_id'] }}</span>{% endif %}
+        {% if e.actor_user_id and e.actor_user_id != p.user.id %}<span class="muted">· {{ p.actors[e.actor_user_id].name if e.actor_user_id in p.actors else 'адміністратор' }}</span>{% endif %}
+      </span></li>
+  {% else %}<li class="muted">Подій ще немає.</li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}

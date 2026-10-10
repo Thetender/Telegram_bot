@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,3 +111,35 @@ async def set_marketing_opt_out(session: AsyncSession, user: User, opt_out: bool
         actor_user_id=user.id,
         data={"marketing_enabled": not opt_out},
     )
+
+
+class LastAdminError(Exception):
+    """Refused: removing this role would leave no active admin."""
+
+
+async def revoke_role(
+    session: AsyncSession, user: User, role: str, actor_user_id: int | None
+) -> bool:
+    """Revoke a role. Never removes the last ADMIN. Returns False if absent."""
+    if role == ROLE_ADMIN:
+        # Lock all admin rows so two concurrent removals cannot both pass the check.
+        admin_ids = list(
+            await session.scalars(
+                select(UserRole.user_id).where(UserRole.role == ROLE_ADMIN).with_for_update()
+            )
+        )
+        if user.id in admin_ids and len(admin_ids) <= 1:
+            raise LastAdminError()
+    res = await session.execute(
+        delete(UserRole).where(UserRole.user_id == user.id, UserRole.role == role)
+    )
+    if res.rowcount == 0:
+        return False
+    await events.log_event(
+        session,
+        events.ROLE_REVOKED,
+        user_id=user.id,
+        actor_user_id=actor_user_id,
+        data={"role": role, "previous": role, "new": None},
+    )
+    return True

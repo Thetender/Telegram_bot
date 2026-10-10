@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Користувачі{% endblock %}
+{% block content %}
+<h1>👥 Користувачі <span class="muted" style="font-size:16px">{{ total }}</span></h1>
+<form class="filters" method="get">
+  <label>Пошук<input type="search" name="q" value="{{ q }}" placeholder="Ім'я, телефон, @username або Telegram ID"></label>
+  <label>Реєстрація з<input type="date" name="reg_from" value="{{ reg_from }}"></label>
+  <label>по<input type="date" name="reg_to" value="{{ reg_to }}"></label>
+  <label>Активність
+    <select name="active">
+      <option value="">будь-коли</option>
+      {% for d, label in [('1','за добу'),('7','за 7 днів'),('30','за 30 днів')] %}<option value="{{ d }}" {{ 'selected' if active == d }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <button type="submit">Знайти</button>
+  {% if base_query %}<a class="btn secondary" href="/admin/users">Скинути</a>{% endif %}
+</form>
+<div class="table-wrap"><table>
+  <thead><tr><th>Ім'я</th><th>Телефон</th><th>Telegram</th><th>Реєстрація</th><th>Остання активність</th><th>Моніторинги</th></tr></thead>
+  <tbody>
+  {% for u, roles in rows %}
+    <tr>
+      <td><a href="/admin/users/{{ u.id }}">{{ u.name or '—' }}</a>
+        {% for r in roles|sort %}<span class="badge {{ r }}">{{ 'Адмін' if r == 'ADMIN' else 'Менеджер' }}</span> {% endfor %}</td>
+      <td>{{ u.phone or '—' }}</td>
+      <td>{% if u.username %}@{{ u.username }}<br>{% endif %}<span class="muted">{{ u.telegram_id }}</span></td>
+      <td>{{ fmt_dt(u.registered_at) }}</td>
+      <td>{{ fmt_dt(u.last_activity_at) }}</td>
+      <td class="muted">— <small>(Iteration 5)</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Нікого не знайдено.</td></tr>
+  {% endfor %}
+  </tbody></table></div>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn secondary" href="?{{ base_query }}&page={{ page-1 }}">← Назад</a>{% endif %}
+  <span class="muted">Сторінка {{ page }} з {{ pages }}</span>
+  {% if page < pages %}<a class="btn secondary" href="?{{ base_query }}&page={{ page+1 }}">Далі →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

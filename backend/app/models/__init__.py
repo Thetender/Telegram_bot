@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -164,6 +165,11 @@ class LegalDocumentVersion(Base):
         Boolean, nullable=False, server_default=text("false")
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ACTIVE")
+    # Optional immutable stored copy of the document (uploaded in the Dashboard).
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    file_sha256: Mapped[str | None] = mapped_column(String(64))
+    file_content: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
@@ -310,6 +316,48 @@ class ConsultationNotification(Base):
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
+class AdminSession(Base):
+    """Dashboard login session. The cookie holds a random token; only its
+    SHA-256 hash is stored."""
+
+    __tablename__ = "admin_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminInvitation(Base):
+    __tablename__ = "admin_invitations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING','ACCEPTED','DECLINED','CANCELLED')", name="status_valid"
+        ),
+        Index(
+            "uq_admin_invitations_one_pending",
+            "invited_user_id",
+            unique=True,
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    invited_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    invited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="PENDING")
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 __all__ = [
     "Base",
     "User",
@@ -328,6 +376,8 @@ __all__ = [
     "ConsultationRequest",
     "ConsultationNotification",
     "CONSULTATION_OPEN",
+    "AdminSession",
+    "AdminInvitation",
     "ROLE_MANAGER",
     "ROLE_ADMIN",
 ]

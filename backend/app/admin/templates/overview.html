@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Огляд{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+  <h1>📊 Огляд</h1>
+  <div class="tabs">
+    {% for d in [7, 30, 90] %}<a href="/admin?period={{ d }}" class="{{ 'active' if o.period_days == d }}">{{ d }} днів</a>{% endfor %}
+  </div>
+</div>
+<div class="cards">
+  <div class="card stat"><div class="label">Користувачі</div><div class="value">{{ o.users_total }}</div>
+    <div class="sub"><b>+{{ o.users_new }}</b> за {{ o.period_days }} днів</div></div>
+  <div class="card stat"><div class="label">Активні моніторинги</div><div class="value">—</div>
+    <div class="sub">з'являться в Iteration 5</div></div>
+  <div class="card stat"><div class="label">Пошуки</div><div class="value">{{ o.searches }}</div>
+    <div class="sub">за {{ o.period_days }} днів</div></div>
+  <div class="card stat"><div class="label">Консультації</div><div class="value">{{ o.consultations }}</div>
+    <div class="sub">за {{ o.period_days }} днів · <a href="/admin/consultations?tab=new">нових: {{ o.consultations_new }}</a></div></div>
+</div>
+<div class="card">
+  <div style="font-weight:600;margin-bottom:8px">Активність по днях</div>
+  {% set n = o.series|length %}
+  {% set w = 1000 / n %}
+  <svg class="chart" viewBox="0 0 1000 180" preserveAspectRatio="none" role="img" aria-label="Реєстрації та пошуки по днях">
+    <line x1="0" y1="170" x2="1000" y2="170" stroke="#e4e7ec"/>
+    {% for day, reg, srch in o.series %}
+      {% set x = loop.index0 * w %}
+      {% set hs = 160 * srch / peak %}{% set hr = 160 * reg / peak %}
+      <rect x="{{ x + w*0.15 }}" y="{{ 170 - hs }}" width="{{ w*0.35 }}" height="{{ hs }}" fill="#9db5f5"><title>{{ day.strftime('%d.%m') }}: пошуків {{ srch }}</title></rect>
+      <rect x="{{ x + w*0.5 }}" y="{{ 170 - hr }}" width="{{ w*0.35 }}" height="{{ hr }}" fill="#1f4fd1"><title>{{ day.strftime('%d.%m') }}: реєстрацій {{ reg }}</title></rect>
+    {% endfor %}
+  </svg>
+  <div class="legend"><span><i style="background:#1f4fd1"></i>Реєстрації</span><span><i style="background:#9db5f5"></i>Пошуки</span>
+    <span>{{ o.series[0][0].strftime('%d.%m') }} — {{ o.series[-1][0].strftime('%d.%m') }}</span><span>макс. за день: {{ peak }}</span></div>
+</div>
+{% endblock %}

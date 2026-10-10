@@ -25,6 +25,10 @@ class PrivacyCb(CallbackData, prefix="pd"):
     action: str  # send
 
 
+class LegalCb(CallbackData, prefix="lg"):
+    action: str  # accept
+
+
 def main_menu(roles: set[str]) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton(text=t.BTN_SEARCH)],
@@ -105,3 +109,32 @@ def delete_data() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=t.BTN_BACK, callback_data=HelpCb(section="menu").pack())],
         ]
     )
+
+
+def legal_gate(pending: list[ActiveLegalVersion]) -> InlineKeyboardMarkup:
+    rows = []
+    for v in pending:
+        text = t.BTN_TERMS if v.doc_type == TERMS else t.BTN_PRIVACY
+        rows.append([InlineKeyboardButton(text=text, url=v.public_url)])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t.BTN_LEGAL_ACCEPT, callback_data=LegalCb(action="accept").pack()
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t.BTN_NOTIFICATION_SETTINGS, callback_data=HelpCb(section="settings").pack()
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t.BTN_DELETE_DATA, callback_data=HelpCb(section="delete").pack()
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

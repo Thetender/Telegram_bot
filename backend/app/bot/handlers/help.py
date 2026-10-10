@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
-from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
+import html
+import logging
+
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +19,8 @@ from app.models import User
 from app.services import legal, privacy
 from app.services import users as users_svc
 
+log = logging.getLogger(__name__)
+
 STATIC_SECTIONS = {
     "faq": t.HELP_FAQ,
     "about": t.HELP_ABOUT,
@@ -23,7 +28,9 @@ STATIC_SECTIONS = {
 }
 
 
-async def show(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:
+async def show(
+    callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup | None
+) -> None:
     """Edit the callback's message in place; fall back to a new message."""
     msg = callback.message
     if isinstance(msg, Message):
@@ -35,6 +42,24 @@ async def show(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup)
                 return
     if callback.from_user:
         await callback.bot.send_message(callback.from_user.id, text, reply_markup=markup)
+
+
+async def notify_admins_about_deletion(
+    bot: Bot, session: AsyncSession, settings: Settings, user: User
+) -> None:
+    """Admins with system notifications ON learn about the new request (FR §12)."""
+    from app.services.consultations import notification_targets
+
+    _, admins = await notification_targets(session)
+    link = f"{settings.public_base_url}/admin/settings#privacy" if settings.public_base_url else ""
+    text = t.PRIVACY_ADMIN_NOTICE.format(
+        name=html.escape(user.name or "—"), phone=html.escape(user.phone or "—"), link=link
+    )
+    for admin in admins:
+        try:
+            await bot.send_message(admin.telegram_id, text)
+        except TelegramAPIError as exc:
+            log.info("Privacy notice to admin %s not sent: %s", admin.id, exc)
 
 
 def create_router() -> Router:
@@ -83,12 +108,24 @@ def create_router() -> Router:
         await show(callback, t.marketing_state(enabled), kb.marketing(enabled))
         await callback.answer(t.SETTINGS_SAVED)
 
+    @router.callback_query(kb.LegalCb.filter(F.action == "accept"))
+    async def on_legal_accept(
+        callback: CallbackQuery, session: AsyncSession, user: User, roles: set[str]
+    ) -> None:
+        await legal.accept_pending(session, user.id)
+        await show(callback, t.LEGAL_ACCEPTED_TEXT, None)
+        await callback.answer()
+        await callback.bot.send_message(
+            callback.from_user.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles)
+        )
+
     @router.callback_query(kb.PrivacyCb.filter())
     async def on_privacy(
         callback: CallbackQuery,
         callback_data: kb.PrivacyCb,
         session: AsyncSession,
         user: User,
+        settings: Settings,
     ) -> None:
         if callback_data.action != "send":
             await callback.answer(t.STALE_ACTION)
@@ -97,5 +134,7 @@ def create_router() -> Router:
         text = t.DELETE_REQUEST_CREATED if created else t.DELETE_REQUEST_EXISTS
         await show(callback, text, kb.back_to_help())
         await callback.answer()
+        if created:
+            await notify_admins_about_deletion(callback.bot, session, settings, user)
 
     return router

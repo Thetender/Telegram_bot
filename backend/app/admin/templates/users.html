@@ -1,5 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Користувачі{% endblock %}
+{% block head %}<style>
+.role-cell{white-space:nowrap;width:1%}
+.role-toggles{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+.role-btn{display:inline-flex;align-items:center;gap:2px;height:30px;min-width:46px;padding:0 8px;border-radius:15px;border:1px dashed #b8c0cc;background:#fff;color:#475467;font-size:15px;line-height:1;cursor:pointer}
+.role-btn i{font-style:normal;font-size:12px;font-weight:700}
+.role-btn:hover{border-color:#1f4fd1;background:#eef3ff}
+.role-btn.on{border:1px solid #1f4fd1;background:#1f4fd1;color:#fff}
+.role-btn.on:hover{background:#c0362c;border-color:#c0362c}
+.role-btn.static,.role-btn.static:hover{cursor:default}
+.role-btn.on.static:hover{background:#1f4fd1;border-color:#1f4fd1}
+.role-btn.wait{border-style:solid;background:#fff8e6;border-color:#f0c36d}
+.roles-legend{font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;color:#667085}
+</style>
+{% endblock %}
 {% block content %}
 <h1>👥 Користувачі <span class="muted" style="font-size:16px">{{ total }}</span></h1>
 <form class="filters" method="get">
@@ -16,7 +30,7 @@
   {% if base_query %}<a class="btn secondary" href="/admin/users">Скинути</a>{% endif %}
 </form>
 <div class="table-wrap"><table>
-  <thead><tr><th>Ім'я</th><th>Телефон</th><th>Telegram</th><th>Реєстрація</th><th>Остання активність</th><th>Моніторинги</th><th>Ролі</th></tr></thead>
+  <thead><tr><th>Ім'я</th><th>Телефон</th><th>Telegram</th><th>Реєстрація</th><th>Остання активність</th><th>Моніторинги</th><th>Ролі<br><span class="roles-legend">🧑‍💼 менеджер · 🛡️ адмін</span></th></tr></thead>
   <tbody>
   {% for u, roles in rows %}
     <tr>
@@ -28,24 +42,26 @@
       <td>{{ fmt_dt(u.registered_at) }}</td>
       <td>{{ fmt_dt(u.last_activity_at) }}</td>
       <td>{{ mcounts.get(u.id, 0) }}</td>
-      <td><div class="row-actions">
-        {% if not u.access_blocked_at %}
+      <td class="role-cell"><div class="role-toggles">
+        {% if u.access_blocked_at %}<span class="muted small">—</span>
+        {% else %}
           {% if 'MANAGER' in roles %}
             <form class="inline" method="post" action="/admin/users/{{ u.id }}/manager" onsubmit="return confirm('Зняти роль менеджера?')">
               <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="revoke"><input type="hidden" name="next" value="{{ here }}">
-              <button class="secondary small" type="submit">Зняти менеджера</button></form>
+              <button class="role-btn on" type="submit" title="Менеджер. Натисніть, щоб зняти роль" aria-label="Зняти менеджера">🧑‍💼<i>✓</i></button></form>
           {% else %}
             <form class="inline" method="post" action="/admin/settings/managers/add">
               <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="next" value="{{ here }}">
-              <button class="small" type="submit">Зробити менеджером</button></form>
+              <button class="role-btn" type="submit" title="Зробити менеджером" aria-label="Зробити менеджером">🧑‍💼<i>+</i></button></form>
           {% endif %}
-          {% if 'ADMIN' not in roles %}
-            {% if u.id in pending_admin_ids %}<span class="muted small" title="Людина має прийняти запрошення в боті">запрошено в адміни</span>
-            {% else %}
+          {% if 'ADMIN' in roles %}
+            <span class="role-btn on static" title="Адміністратор. Зняти роль можна в Налаштуваннях → Адміністратори">🛡️<i>✓</i></span>
+          {% elif u.id in pending_admin_ids %}
+            <span class="role-btn wait static" title="Вже запрошено в адміни: чекаємо, поки людина прийме запрошення в боті">🛡️<i>⏳</i></span>
+          {% else %}
             <form class="inline" method="post" action="/admin/settings/admins/invite" onsubmit="return confirm('Надіслати запрошення стати адміністратором? Людина має прийняти його в боті.')">
               <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="next" value="{{ here }}">
-              <button class="secondary small" type="submit" title="Людина отримає запрошення в боті й має його прийняти">Зробити адміном</button></form>
-            {% endif %}
+              <button class="role-btn" type="submit" title="Зробити адміном (надійде запрошення в боті)" aria-label="Зробити адміном">🛡️<i>+</i></button></form>
           {% endif %}
         {% endif %}
       </div></td>

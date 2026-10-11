@@ -131,9 +131,13 @@ def test_log_filter_redacts_bot_token(caplog):
     from app.logging_setup import RedactSecretsFilter
 
     record = logging.LogRecord(
-        "x", logging.INFO, __file__, 1,
+        "x",
+        logging.INFO,
+        __file__,
+        1,
         "calling https://api.telegram.org/bot123456789:AAbbCCddEEffGGhhIIjjKKllMMnnOOppQQ/sendMessage",
-        None, None,
+        None,
+        None,
     )
     RedactSecretsFilter().filter(record)
     assert "AAbbCC" not in record.getMessage()

@@ -178,8 +178,8 @@ async def test_flood_limit_pauses_and_transient_errors_retry(session_factory, mo
                     NotificationDelivery.canonical_auction_id == "LSE-2"
                 )
             )
-            assert d.status == "PENDING" and d.attempts == 1 and d.next_attempt_at > datetime.now(
-                UTC
+            assert (
+                d.status == "PENDING" and d.attempts == 1 and d.next_attempt_at > datetime.now(UTC)
             )
             # Pretend the backoff passed.
             await s.execute(

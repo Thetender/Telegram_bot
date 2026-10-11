@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +30,116 @@ EDITABLE: dict[str, tuple[str, str]] = {
 async def get(session: AsyncSession, key: str) -> str:
     row = await session.get(BotText, key)
     return row.value if row is not None else EDITABLE[key][1]
+
+
+TEXT, LINK, DOC = "text", "link", "doc"
+MODES = (TEXT, LINK, DOC)
+MAX_CAPTION = 1000  # Telegram caption limit is 1024
+MAX_FILE = 20 * 1024 * 1024
+DOC_EXTENSIONS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt")
+DEFAULT_BUTTON = "🔗 Детальніше"
+
+
+@dataclass(frozen=True)
+class Section:
+    key: str
+    title: str
+    mode: str  # text | link | doc
+    text: str  # the text, or the description for link/doc (may be empty)
+    is_default: bool
+    button_text: str | None = None
+    button_url: str | None = None
+    file_name: str | None = None
+    file_id: str | None = None
+
+
+async def get_section(session: AsyncSession, key: str) -> Section:
+    title, default = EDITABLE[key]
+    row = await session.get(BotText, key)
+    if row is None:
+        return Section(key, title, TEXT, default, True)
+    return Section(
+        key,
+        title,
+        row.mode if row.mode in MODES else TEXT,
+        row.value,
+        False,
+        row.button_text,
+        row.button_url,
+        row.file_name,
+        row.file_id,
+    )
+
+
+async def all_sections(session: AsyncSession) -> list[Section]:
+    return [await get_section(session, key) for key in EDITABLE]
+
+
+async def file_content(session: AsyncSession, key: str) -> bytes | None:
+    return await session.scalar(select(BotText.file_content).where(BotText.key == key))
+
+
+async def remember_file_id(session: AsyncSession, key: str, file_id: str) -> None:
+    row = await session.get(BotText, key)
+    if row is not None:
+        row.file_id = file_id[:255]
+
+
+async def save_section(
+    session: AsyncSession,
+    key: str,
+    admin: User,
+    mode: str,
+    value: str,
+    button_text: str = "",
+    button_url: str = "",
+    file_name: str | None = None,
+    content: bytes | None = None,
+) -> list[str]:
+    """Text OR link with a description OR document. Returns errors (nothing saved)."""
+    if key not in EDITABLE:
+        raise KeyError(key)
+    if mode not in MODES:
+        return ["Невідомий тип розділу."]
+    value = (value or "").replace("\r\n", "\n").strip()
+    row = await session.get(BotText, key)
+    values: dict = {"mode": mode, "value": value, "updated_by": admin.id}
+    if mode == TEXT:
+        errors = validate(value, key)
+    elif mode == LINK:
+        url = (button_url or "").strip()
+        errors = telegram_html_errors(value, MAX_LEN) if value else []
+        if not url.startswith("https://") or len(url) > 1024 or " " in url:
+            errors.append("Вкажіть посилання, що починається з https://")
+        label = " ".join((button_text or "").split()) or DEFAULT_BUTTON
+        if len(label) > 64:
+            errors.append("Назва кнопки — до 64 символів.")
+        values |= {"button_text": label, "button_url": url}
+    else:
+        errors = telegram_html_errors(value, MAX_CAPTION) if value else []
+        if content is not None:
+            name = (file_name or "document").strip()[:255]
+            if len(content) > MAX_FILE:
+                errors.append("Файл більший за 20 МБ.")
+            elif not name.lower().endswith(DOC_EXTENSIONS):
+                errors.append("Дозволені файли: PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT.")
+            values |= {"file_name": name, "file_content": content, "file_id": None}
+        elif row is None or not row.file_name:
+            errors.append("Завантажте файл документа.")
+    if errors:
+        return errors
+    await session.execute(
+        insert(BotText)
+        .values(key=key, **values)
+        .on_conflict_do_update(index_elements=[BotText.key], set_=values)
+    )
+    await events.log_event(
+        session,
+        events.SETTINGS_CHANGED,
+        actor_user_id=admin.id,
+        data={"bot_text": key, "mode": mode},
+    )
+    return []
 
 
 async def all_texts(session: AsyncSession) -> dict[str, tuple[str, str, bool]]:
@@ -70,23 +182,7 @@ def validate(value: str, key: str = "") -> list[str]:
 
 
 async def save(session: AsyncSession, key: str, value: str, admin: User) -> list[str]:
-    if key not in EDITABLE:
-        raise KeyError(key)
-    value = (value or "").replace("\r\n", "\n").strip()
-    errors = validate(value, key)
-    if errors:
-        return errors
-    await session.execute(
-        insert(BotText)
-        .values(key=key, value=value, updated_by=admin.id)
-        .on_conflict_do_update(
-            index_elements=[BotText.key], set_={"value": value, "updated_by": admin.id}
-        )
-    )
-    await events.log_event(
-        session, events.SETTINGS_CHANGED, actor_user_id=admin.id, data={"bot_text": key}
-    )
-    return []
+    return await save_section(session, key, admin, TEXT, value)
 
 
 async def reset(session: AsyncSession, key: str, admin: User) -> None:

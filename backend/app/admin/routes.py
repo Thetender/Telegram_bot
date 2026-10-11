@@ -723,7 +723,8 @@ def create_router() -> APIRouter:
             today=datetime.now(UTC).date().isoformat(),
             tab=tab,
             tabs=SETTINGS_TABS,
-            bot_texts=await bot_texts.all_texts(session) if tab == "texts" else {},
+            bot_texts=await bot_texts.all_sections(session) if tab == "texts" else [],
+            text_error=request.query_params.get("text_error", "")[:300],
             text_preview=campaigns_svc.preview_html,
         )
 
@@ -857,17 +858,44 @@ def create_router() -> APIRouter:
         csrf: str = Form(""),
         value: str = Form(""),
         action: str = Form("save"),
+        mode: str = Form("text"),
+        button_text: str = Form(""),
+        button_url: str = Form(""),
+        file: UploadFile | None = File(None),  # noqa: B008
     ) -> Response:
+        """A Help section is a text, OR a link with a description, OR a document."""
         auth.check_csrf(ctx, csrf)
         if key not in bot_texts.EDITABLE:
             raise HTTPException(404)
         if action == "reset":
             await bot_texts.reset(session, key, ctx.user)
             return redirect("/admin/settings", "saved", tab="texts")
-        errors = await bot_texts.save(session, key, value, ctx.user)
+        content = file_name = None
+        if mode == bot_texts.DOC and file is not None and file.filename:
+            content = await file.read(bot_texts.MAX_FILE + 1)
+            file_name = file.filename
+        errors = await bot_texts.save_section(
+            session, key, ctx.user, mode, value, button_text, button_url, file_name, content
+        )
         if errors:
-            return redirect("/admin/settings", "text_invalid", tab="texts")
+            await session.rollback()
+            return RedirectResponse(
+                f"/admin/settings?tab=texts&text_error={quote(errors[0])}#t-{key}", 303
+            )
         return redirect("/admin/settings", "saved", tab="texts")
+
+    @router.get("/settings/texts/{key}/file")
+    async def bot_text_file(session: DB, ctx: Admin, key: str) -> Response:
+        section = await bot_texts.get_section(session, key) if key in bot_texts.EDITABLE else None
+        content = await bot_texts.file_content(session, key) if section else None
+        if not content or section is None:
+            raise HTTPException(404)
+        name = quote(section.file_name or "document")
+        return Response(
+            content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{name}"},
+        )
 
     @router.post("/settings/legal/publish")
     async def legal_publish(

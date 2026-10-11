@@ -61,9 +61,9 @@ async def test_own_contact_registers_user(harness, db):
     assert labels == [t.BTN_SEARCH, t.BTN_MONITORINGS, t.BTN_CONSULTATION, t.BTN_HELP]
 
     accepted = await db.scalar(
-        select(func.count()).select_from(UserLegalAcceptance).where(
-            UserLegalAcceptance.user_id == user.id
-        )
+        select(func.count())
+        .select_from(UserLegalAcceptance)
+        .where(UserLegalAcceptance.user_id == user.id)
     )
     assert accepted == 2
     registered_events = await db.scalar(

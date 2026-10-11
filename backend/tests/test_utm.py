@@ -44,8 +44,7 @@ def test_links_inside_message_text_are_tagged():
     out = links.tag_text_links(text, links.SUPPORT, "faq_3")
     assert (
         "https://thetender.com.ua/?utm_source=telegram&amp;utm_medium=bot"
-        "&amp;utm_campaign=support&amp;utm_content=faq_3. "
-        in out
+        "&amp;utm_campaign=support&amp;utm_content=faq_3. " in out
     )
     assert 'href="https://thetender.com.ua/t?a=1&amp;b=2&amp;utm_source=telegram' in out
     assert out.endswith("https://prozorro.sale")

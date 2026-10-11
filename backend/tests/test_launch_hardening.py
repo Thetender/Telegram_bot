@@ -33,7 +33,7 @@ async def test_help_texts_are_editable_in_the_dashboard(session_factory):
         r = await d.client.post(
             "/admin/settings/texts/HELP_FAQ", data={"csrf": csrf, "value": "<b>Питання</b"}
         )
-        assert "msg=text_invalid" in r.headers["location"]
+        assert "text_error=" in r.headers["location"]
         r = await d.client.post(
             "/admin/settings/texts/HELP_FAQ",
             data={"csrf": csrf, "value": "<b>Часті питання</b>\nЯк зареєструватися?"},
@@ -117,3 +117,81 @@ async def test_errors_are_visible_in_the_dashboard(session_factory):
         assert "Something failed" in page.text and "ValueError" in page.text
         assert "SECRET123" not in page.text and "AAAAAAAAAAAAAAAAAAAA" not in page.text
 
+
+async def test_help_section_can_be_a_link_or_a_document(session_factory):
+    from aiogram.methods import SendDocument
+    from aiogram.types import BufferedInputFile
+
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        await register(d, CLIENT_TG)
+        await d.login(ADMIN_TG)
+        csrf = await d.csrf()
+        url = "/admin/settings/texts/HELP_TARIFFS"
+
+        # Link with a description; the URL is required.
+        r = await d.client.post(url, data={"csrf": csrf, "mode": "link", "value": "Тарифи"})
+        assert "text_error=" in r.headers["location"]
+        r = await d.client.post(
+            url,
+            data={
+                "csrf": csrf,
+                "mode": "link",
+                "value": "Актуальні тарифи — на сайті.",
+                "button_text": "💳 Усі тарифи",
+                "button_url": "https://thetender.com.ua/tariffs",
+            },
+        )
+        assert "msg=saved" in r.headers["location"]
+        d.tg.clear()
+
+        def tap():  # a fresh update each time (duplicate update ids are dropped)
+            return callback_update(CLIENT_TG, kb.HelpCb(section="tariffs").pack())
+
+        await d.dp.feed_update(d.bot, tap())
+        msg = d.tg.sent()[-1]
+        assert msg.text == "Актуальні тарифи — на сайті."
+        button = msg.reply_markup.inline_keyboard[0][0]
+        assert button.text == "💳 Усі тарифи"
+        assert button.url.startswith("https://thetender.com.ua/tariffs?utm_source=telegram")
+        assert "utm_campaign=support&utm_content=tariffs" in button.url
+
+        # Document: a file is required; bad types are refused.
+        r = await d.client.post(url, data={"csrf": csrf, "mode": "doc", "value": ""})
+        assert "text_error=" in r.headers["location"]
+        r = await d.client.post(
+            url,
+            data={"csrf": csrf, "mode": "doc", "value": ""},
+            files={"file": ("virus.exe", b"MZ", "application/octet-stream")},
+        )
+        assert "text_error=" in r.headers["location"]
+        r = await d.client.post(
+            url,
+            data={"csrf": csrf, "mode": "doc", "value": "Прайс у PDF"},
+            files={"file": ("tariffs.pdf", b"%PDF-1.4 test", "application/pdf")},
+        )
+        assert "msg=saved" in r.headers["location"]
+        page = await d.client.get("/admin/settings", params={"tab": "texts"})
+        assert "tariffs.pdf" in page.text
+        got = await d.client.get(f"{url}/file")
+        assert got.content == b"%PDF-1.4 test"
+
+        d.tg.clear()
+        await d.dp.feed_update(d.bot, tap())
+        (first,) = [m for m in d.tg.requests if isinstance(m, SendDocument)]
+        assert isinstance(first.document, BufferedInputFile) and first.caption == "Прайс у PDF"
+        # The second time the cached Telegram file_id is used, no re-upload.
+        d.tg.clear()
+        await d.dp.feed_update(d.bot, tap())
+        (second,) = [m for m in d.tg.requests if isinstance(m, SendDocument)]
+        assert isinstance(second.document, str) and second.document.startswith("FILE")
+
+        # Re-saving the description keeps the file.
+        r = await d.client.post(url, data={"csrf": csrf, "mode": "doc", "value": "Новий опис"})
+        assert "msg=saved" in r.headers["location"]
+
+        # Back to plain text.
+        await d.client.post(url, data={"csrf": csrf, "mode": "text", "value": "Тарифи: від 0 грн"})
+        d.tg.clear()
+        await d.dp.feed_update(d.bot, tap())
+        assert d.tg.texts()[-1] == "Тарифи: від 0 грн"

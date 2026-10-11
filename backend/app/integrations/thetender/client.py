@@ -242,6 +242,13 @@ class HttpTenderClient:
                 )
             else:
                 if resp.status_code == 403:
+                    from app.services import alerts
+
+                    alerts.alert(
+                        "tender_auth",
+                        "The Tender API відхиляє ключ бота (HTTP 403): пошук і моніторинги "
+                        "не працюють. Перевірте THETENDER_API_KEY у налаштуваннях сервера.",
+                    )
                     raise TenderError("auth", "API key rejected (403)")
                 if resp.status_code == 404:
                     raise TenderError("not_found")

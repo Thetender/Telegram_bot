@@ -26,7 +26,7 @@ from app.db import make_engine, make_session_factory
 from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
 from app.models import LegalDocumentVersion, User
-from app.services import events, notifications
+from app.services import alerts, events, notifications
 from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
 from app.workers.delivery import DeliveryWorker
 
@@ -56,6 +56,7 @@ def create_app(
         app.state.bot = bot or create_bot(settings)
         app.state.tender = tender or make_tender_client(settings)
         app.state.dp = create_dispatcher(settings, session_factory, app.state.tender)
+        alerts.configure(app.state.bot, session_factory, settings.environment)
         app.state.worker = DeliveryWorker(app.state.bot, session_factory, settings)
         if settings.delivery_worker_enabled:
             app.state.worker.start()
@@ -73,12 +74,17 @@ def create_app(
             yield
         finally:
             await app.state.worker.stop()
+            await alerts.drain()
+            alerts.configure(None, None)
             await app.state.bot.session.close()
             await app.state.tender.aclose()
             await engine.dispose()
 
     app = FastAPI(
-        title="The Tender Telegram service", lifespan=lifespan, docs_url=None, redoc_url=None,
+        title="The Tender Telegram service",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
         openapi_url=None,
     )
     mount_admin(app)
@@ -119,6 +125,11 @@ def create_app(
             # The update is already recorded as processed; answering 200 avoids
             # Telegram re-sending it endlessly. The error goes to logs/alerts.
             log.exception("Error while handling Telegram update %s", update.update_id)
+            alerts.alert(
+                "update_error",
+                "Під час обробки повідомлення користувача сталася помилка. Деталі — в логах "
+                "сервера (пошук «Error while handling Telegram update»).",
+            )
         return Response(status_code=200)
 
     @app.post(THETENDER_WEBHOOK_PATH)
@@ -133,6 +144,11 @@ def create_app(
         received = request.query_params.get("auth", "")
         if not expected or not hmac.compare_digest(received.encode(), expected.encode()):
             log.warning("The Tender webhook: rejected request with invalid credentials")
+            alerts.alert(
+                "webhook_auth",
+                "Отримано запит на адресу сповіщень The Tender з неправильним ключем. Якщо "
+                "сповіщення про нові аукціони не приходять — звірте ключ із розробником API.",
+            )
             return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
         try:
             payload = await request.json()

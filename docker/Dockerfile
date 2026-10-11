@@ -19,4 +19,4 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.api.main:create_app --factory --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+CMD ["sh", "-c", "python -m app.migrate && exec uvicorn app.api.main:create_app --factory --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]

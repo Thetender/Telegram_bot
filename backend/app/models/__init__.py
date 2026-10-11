@@ -141,9 +141,7 @@ class BotSession(Base):
 
     __tablename__ = "bot_sessions"
 
-    telegram_user_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=False
-    )
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     state: Mapped[str | None] = mapped_column(String(128))
     state_data: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
@@ -395,9 +393,7 @@ class SearchSnapshot(Base):
     __table_args__ = (Index("ix_search_snapshots_user_created", "user_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     # SEARCH = from the search screen; MONITORING = "show results" of a saved monitoring.
     source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="SEARCH")
@@ -430,9 +426,7 @@ class ConsultationRequest(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # Contact snapshot at request time (the user may change it later).
     contact_name: Mapped[str | None] = mapped_column(String(256))
     contact_phone: Mapped[str | None] = mapped_column(String(32))
@@ -477,6 +471,20 @@ class ConsultationNotification(Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AppError(Base):
+    """Errors from the service log, visible in the Dashboard (Журнал помилок)."""
+
+    __tablename__ = "app_errors"
+    __table_args__ = (Index("ix_app_errors_created", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    logger: Mapped[str] = mapped_column(String(128), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 class BotText(Base):
     """Bot texts editable in the Dashboard (Help sections). Missing key →
     the built-in default from app/bot/texts.py."""
@@ -497,9 +505,7 @@ class AdminSession(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -532,6 +538,7 @@ class AdminInvitation(Base):
 
 
 __all__ = [
+    "AppError",
     "BotText",
     "Campaign",
     "CampaignRecipient",

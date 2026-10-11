@@ -26,6 +26,7 @@ from app.config import Settings
 from app.models import (
     ROLE_ADMIN,
     ROLE_MANAGER,
+    AppError,
     Campaign,
     ConsultationRequest,
     LegalDocumentVersion,
@@ -512,6 +513,11 @@ def create_router() -> APIRouter:
             raise HTTPException(400)
         changed = await svc.correct_result(session, request_id, ctx.user, result)
         return redirect(f"/admin/consultations/{request_id}", "corrected" if changed else None)
+
+    @router.get("/errors", response_class=HTMLResponse)
+    async def errors_page(request: Request, session: DB, ctx: Admin, open_id: int = 0) -> Response:
+        rows = list(await session.scalars(select(AppError).order_by(AppError.id.desc()).limit(200)))
+        return render(request, "errors.html", ctx, "errors", rows=rows, open_id=open_id)
 
     # ---------------- campaigns (Iteration 7) ----------------
 

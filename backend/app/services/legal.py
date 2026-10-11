@@ -43,9 +43,7 @@ async def get_active_versions(session: AsyncSession) -> dict[str, ActiveLegalVer
     return result
 
 
-async def pending_reacceptance(
-    session: AsyncSession, user_id: int
-) -> list[ActiveLegalVersion]:
+async def pending_reacceptance(session: AsyncSession, user_id: int) -> list[ActiveLegalVersion]:
     """Active versions marked «потребує повторного підтвердження» that this
     user has not accepted yet. Non-empty → interactive functions are gated."""
     accepted = select(UserLegalAcceptance.legal_document_version_id).where(
@@ -122,9 +120,7 @@ async def publish_version(
         raise ValueError(f"{doc_type} version {version} already exists (versions are immutable)")
     await session.execute(
         update(LegalDocumentVersion)
-        .where(
-            LegalDocumentVersion.document_id == doc.id, LegalDocumentVersion.status == "ACTIVE"
-        )
+        .where(LegalDocumentVersion.document_id == doc.id, LegalDocumentVersion.status == "ACTIVE")
         .values(status="ARCHIVED")
     )
     v = LegalDocumentVersion(

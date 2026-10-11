@@ -472,6 +472,21 @@ class ConsultationNotification(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    # Retry of a failed delivery to a manager (by the delivery worker).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BotText(Base):
+    """Bot texts editable in the Dashboard (Help sections). Missing key →
+    the built-in default from app/bot/texts.py."""
+
+    __tablename__ = "bot_texts"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
 
 
 class AdminSession(Base):
@@ -517,6 +532,7 @@ class AdminInvitation(Base):
 
 
 __all__ = [
+    "BotText",
     "Campaign",
     "CampaignRecipient",
     "Monitoring",

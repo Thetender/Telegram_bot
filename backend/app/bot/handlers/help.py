@@ -16,16 +16,17 @@ from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import User
+from app.services import bot_texts, legal, privacy
 from app.services import campaigns as campaigns_svc
-from app.services import legal, privacy
 from app.services import users as users_svc
 
 log = logging.getLogger(__name__)
 
+# Help section → editable text key (Dashboard → Налаштування → Тексти бота).
 STATIC_SECTIONS = {
-    "faq": t.HELP_FAQ,
-    "about": t.HELP_ABOUT,
-    "tariffs": t.HELP_TARIFFS,
+    "faq": "HELP_FAQ",
+    "about": "HELP_ABOUT",
+    "tariffs": "HELP_TARIFFS",
 }
 
 
@@ -85,7 +86,8 @@ def create_router() -> Router:
             versions = await legal.get_active_versions(session)
             await show(callback, t.HELP_TITLE, kb.help_menu(versions))
         elif section in STATIC_SECTIONS:
-            await show(callback, STATIC_SECTIONS[section], kb.back_to_help())
+            text = await bot_texts.get(session, STATIC_SECTIONS[section])
+            await show(callback, text, kb.back_to_help())
         elif section == "consult":
             from app.bot.handlers.consultation import show_consultation
 

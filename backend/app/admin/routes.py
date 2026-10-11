@@ -33,9 +33,9 @@ from app.models import (
 )
 from app.services import access as access_svc
 from app.services import admin as svc
+from app.services import bot_texts, events, legal
 from app.services import campaigns as campaigns_svc
 from app.services import consultations as consult_svc
-from app.services import events, legal
 from app.services import privacy as privacy_svc
 from app.services import users as users_svc
 from app.services.search_params import summary_lines
@@ -114,6 +114,11 @@ FLASH = {
     ),
     "campaign_queued": ("ok", "Розсилку запущено ✅ Прогрес оновлюється автоматично."),
     "campaign_deleted": ("ok", "Чернетку видалено."),
+    "text_invalid": (
+        "warn",
+        "Текст не збережено: перевірте форматування (дозволено <b>, <i>, <u>, "
+        '<a href="https://...">) і довжину до 3500 символів.',
+    ),
     "url_or_file": ("warn", "Вкажіть публічне посилання або завантажте файл документа."),
     "privacy_done": (
         "ok",
@@ -190,6 +195,7 @@ SETTINGS_TABS = {
     "managers": "Менеджери",
     "legal": "Юридичні документи",
     "privacy": "Запити на видалення",
+    "texts": "Тексти бота",
 }
 
 
@@ -711,6 +717,8 @@ def create_router() -> APIRouter:
             today=datetime.now(UTC).date().isoformat(),
             tab=tab,
             tabs=SETTINGS_TABS,
+            bot_texts=await bot_texts.all_texts(session) if tab == "texts" else {},
+            text_preview=campaigns_svc.preview_html,
         )
 
     @router.post("/settings/admins/invite")
@@ -834,6 +842,26 @@ def create_router() -> APIRouter:
             except TelegramAPIError:
                 pass
         return redirect("/admin/settings", "privacy_done", tab="privacy")
+
+    @router.post("/settings/texts/{key}")
+    async def save_bot_text(
+        session: DB,
+        ctx: Admin,
+        key: str,
+        csrf: str = Form(""),
+        value: str = Form(""),
+        action: str = Form("save"),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        if key not in bot_texts.EDITABLE:
+            raise HTTPException(404)
+        if action == "reset":
+            await bot_texts.reset(session, key, ctx.user)
+            return redirect("/admin/settings", "saved", tab="texts")
+        errors = await bot_texts.save(session, key, value, ctx.user)
+        if errors:
+            return redirect("/admin/settings", "text_invalid", tab="texts")
+        return redirect("/admin/settings", "saved", tab="texts")
 
     @router.post("/settings/legal/publish")
     async def legal_publish(

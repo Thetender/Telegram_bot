@@ -67,6 +67,19 @@ class _Checker(HTMLParser):
         self.visible += len(data)
 
 
+def telegram_html_errors(text: str, max_len: int = MAX_TEXT) -> list[str]:
+    """Problems Telegram would reject (unsupported/unbalanced tags, bad links, length)."""
+    checker = _Checker()
+    checker.feed(text)
+    checker.close()
+    errors = list(checker.errors)
+    if checker.stack:
+        errors.append("Не всі теги закрито: " + ", ".join(f"<{t}>" for t in checker.stack))
+    if checker.visible > max_len:
+        errors.append(f"Текст задовгий: {checker.visible} символів (максимум {max_len}).")
+    return errors
+
+
 def validate(campaign: Campaign) -> list[str]:
     """Errors that must be fixed before the campaign can be sent."""
     errors: list[str] = []

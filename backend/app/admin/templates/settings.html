@@ -154,4 +154,26 @@
     {% else %}<tr><td colspan="5" class="muted">Запитів немає.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endif %}
+{% if tab == "texts" %}
+<div class="section" id="texts">
+  <h2>Тексти бота</h2>
+  <p class="muted">Розділи «Допомоги». Форматування Telegram: <code>&lt;b&gt;жирний&lt;/b&gt;</code>, <code>&lt;i&gt;курсив&lt;/i&gt;</code>, <code>&lt;a href="https://..."&gt;посилання&lt;/a&gt;</code>. Зміни з'являються в боті одразу.</p>
+  {% for key, (title, value, is_default) in bot_texts.items() %}
+  <div class="card" style="margin-bottom:16px">
+    <div style="font-weight:600;margin-bottom:8px">{{ title }} {% if is_default %}<span class="badge NEW">стандартний текст</span>{% endif %}</div>
+    <div class="grid2">
+      <form method="post" action="/admin/settings/texts/{{ key }}" class="stack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <textarea name="value" rows="10" style="width:100%">{{ value }}</textarea>
+        <div class="row-actions">
+          <button type="submit" name="action" value="save">Зберегти</button>
+          {% if not is_default %}<button type="submit" name="action" value="reset" class="secondary" onclick="return confirm('Повернути стандартний текст?')">Повернути стандартний</button>{% endif %}
+        </div>
+      </form>
+      <div><div class="muted" style="margin-bottom:6px">Як побачить користувач:</div><div class="tg-preview">{{ text_preview(value)|safe }}</div></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

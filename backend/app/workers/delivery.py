@@ -28,9 +28,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot import texts as t
 from app.config import Settings
-from app.models import Campaign, CampaignRecipient, NotificationDelivery, User
+from app.models import (
+    Campaign,
+    CampaignRecipient,
+    ConsultationNotification,
+    ConsultationRequest,
+    NotificationDelivery,
+    User,
+)
+from app.services import alerts, events
 from app.services import campaigns as campaigns_svc
-from app.services import events
 from app.services.links import tracked_url
 from app.services.search_params import format_number
 
@@ -44,6 +51,12 @@ PER_CHAT_INTERVAL = 1.0
 POLL_INTERVAL = 2.0
 
 QueueModel = type[NotificationDelivery] | type[CampaignRecipient]
+
+# Consultation cards that could not be delivered to a manager are re-sent
+# while the request is still NEW (Architecture §11).
+MANAGER_RETRY_EVERY = 60.0
+MANAGER_MAX_ATTEMPTS = 5
+MANAGER_RETRY_WINDOW = timedelta(hours=24)
 
 
 def backoff(attempts: int) -> timedelta:
@@ -99,6 +112,7 @@ class DeliveryWorker:
         self._paused_until = 0.0
         self._last_send = 0.0
         self._last_chat: dict[int, float] = {}
+        self._next_manager_retry = 0.0
 
     # ---------- lifecycle ----------
 
@@ -127,6 +141,11 @@ class DeliveryWorker:
                 raise
             except Exception:  # noqa: BLE001 - the worker must survive DB/network hiccups
                 log.exception("Delivery worker iteration failed")
+                alerts.alert(
+                    "worker_error",
+                    "Збій надсилання сповіщень/розсилок (бот повторить спробу автоматично). "
+                    "Якщо повторюється — перевірте логи сервера і доступ до бази даних.",
+                )
                 handled = 0
             if handled:
                 continue
@@ -173,6 +192,9 @@ class DeliveryWorker:
             (NotificationDelivery, self._process),
             (CampaignRecipient, self._process_campaign),
         )
+        if time.monotonic() >= self._next_manager_retry:
+            self._next_manager_retry = time.monotonic() + MANAGER_RETRY_EVERY
+            await self._retry_manager_notifications()
         for model, process in queues:
             ids = await self._claim(model)
             if not ids:
@@ -350,3 +372,58 @@ class DeliveryWorker:
             r.sent_at, r.message_id = datetime.now(UTC), msg.message_id
             await session.commit()
             return False
+
+    async def _retry_manager_notifications(self) -> int:
+        """Re-send failed consultation cards to managers (request still NEW)."""
+        from app.bot.handlers.consultation import request_card, status_tail
+
+        now = datetime.now(UTC)
+        resent = 0
+        async with self.sf() as session:
+            rows = (
+                await session.execute(
+                    select(ConsultationNotification, ConsultationRequest)
+                    .join(
+                        ConsultationRequest,
+                        ConsultationRequest.id == ConsultationNotification.request_id,
+                    )
+                    .where(
+                        ConsultationNotification.kind == "MANAGER",
+                        ConsultationNotification.status == "FAILED",
+                        ConsultationNotification.attempts < MANAGER_MAX_ATTEMPTS,
+                        ConsultationNotification.created_at > now - MANAGER_RETRY_WINDOW,
+                        or_(
+                            ConsultationNotification.next_attempt_at.is_(None),
+                            ConsultationNotification.next_attempt_at <= now,
+                        ),
+                        ConsultationRequest.status == "NEW",
+                    )
+                    .order_by(ConsultationNotification.id)
+                    .limit(BATCH)
+                    .with_for_update(of=ConsultationNotification, skip_locked=True)
+                )
+            ).all()
+            for note, req in rows:
+                manager = await session.get(User, note.recipient_user_id)
+                if manager is None or manager.anonymized_at is not None:
+                    note.attempts = MANAGER_MAX_ATTEMPTS
+                    continue
+                tail, markup = status_tail(req, None, manager)
+                text = f"{t.REQ_NEW_HEADER}\n\n{request_card(req, self.settings.timezone)}"
+                await self._throttle(note.chat_id)
+                try:
+                    msg = await self.bot.send_message(note.chat_id, text, reply_markup=markup)
+                except TelegramForbiddenError as exc:
+                    note.attempts, note.error = MANAGER_MAX_ATTEMPTS, str(exc)[:1000]
+                    continue
+                except (TelegramAPIError, OSError, TimeoutError) as exc:
+                    note.attempts += 1
+                    note.error = f"{type(exc).__name__}: {exc}"[:1000]
+                    note.next_attempt_at = now + backoff(note.attempts)
+                    continue
+                note.status, note.message_id, note.error = "SENT", msg.message_id, None
+                resent += 1
+            await session.commit()
+        if resent:
+            log.info("Re-sent %s consultation card(s) to managers", resent)
+        return resent

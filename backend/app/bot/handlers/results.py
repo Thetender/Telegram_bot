@@ -28,12 +28,14 @@ log = logging.getLogger(__name__)
 
 # Telegram limit is 4096 characters of *visible* text (HTML tags and link
 # addresses do not count), keep a small margin.
-MESSAGE_BUDGET = 4000
+MESSAGE_BUDGET = 3800
 _TAG = re.compile(r"<[^>]+>")
 
 
 def visible_len(text: str) -> int:
-    return len(html.unescape(_TAG.sub("", text)))
+    """Length as Telegram counts it: UTF-16 code units of the visible text
+    (emoji like 💰 🔗 count as 2, so a plain len() underestimates)."""
+    return len(html.unescape(_TAG.sub("", text)).encode("utf-16-le")) // 2
 
 
 class RCb(CallbackData, prefix="r"):

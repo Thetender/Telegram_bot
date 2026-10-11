@@ -350,7 +350,7 @@ async def test_legal_documents_publish_url_and_file(session_factory):
 
         await d.dp.feed_update(d.bot, message_update(77777, "/start"))
         links = d.tg.sent()[0].reply_markup.inline_keyboard
-        assert links[0][0].url == "https://thetender.com.ua/new-terms"
+        assert links[0][0].url.startswith("https://thetender.com.ua/new-terms?utm_source=telegram")
 
 
 async def test_legal_version_with_only_a_file_gets_a_public_link(session_factory):

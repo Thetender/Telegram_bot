@@ -16,7 +16,7 @@ from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import User
-from app.services import bot_texts, legal, privacy
+from app.services import bot_texts, legal, links, privacy
 from app.services import campaigns as campaigns_svc
 from app.services import users as users_svc
 
@@ -67,7 +67,7 @@ async def show_faq(callback: CallbackQuery, session: AsyncSession, section: str)
     text = await bot_texts.get(session, "HELP_FAQ")
     items = bot_texts.parse_faq(text)
     if not items:  # free-form text without numbered questions
-        await show(callback, text, kb.back_to_help())
+        await show(callback, links.tag_text_links(text, links.SUPPORT, "faq"), kb.back_to_help())
         return
     if section.startswith("q") and section[1:].isdigit() and int(section[1:]) < len(items):
         question, answer = items[int(section[1:])]
@@ -80,6 +80,7 @@ async def show_faq(callback: CallbackQuery, session: AsyncSession, section: str)
                 ]
             ]
         )
+        answer = links.tag_text_links(answer, links.SUPPORT, f"faq_{section[1:]}")
         await show(callback, f"<b>{question}</b>\n\n{answer}", markup)
         return
     rows = [
@@ -124,6 +125,7 @@ def create_router() -> Router:
             await show_faq(callback, session, section)
         elif section in STATIC_SECTIONS:
             text = await bot_texts.get(session, STATIC_SECTIONS[section])
+            text = links.tag_text_links(text, links.SUPPORT, section)
             await show(callback, text, kb.back_to_help())
         elif section == "consult":
             from app.bot.handlers.consultation import show_consultation

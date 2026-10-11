@@ -23,7 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.models import Campaign, CampaignRecipient, Event, User
 from app.services import events
-from app.services.links import allowed_hosts, is_allowed_destination, tracked_url
+from app.services.links import (
+    DIGEST,
+    allowed_hosts,
+    is_allowed_destination,
+    tag_text_links,
+    tracked_url,
+    with_utm,
+)
 
 MAX_TEXT = 3500  # Telegram limit is 4096; keep room for formatting
 MAX_SELECTED = 5000
@@ -175,7 +182,7 @@ def render(
 ) -> tuple[str, InlineKeyboardMarkup]:
     rows: list[list[InlineKeyboardButton]] = []
     if campaign.button_text and campaign.button_url:
-        url = campaign.button_url
+        url = with_utm(campaign.button_url, DIGEST, f"campaign_{campaign.id}")
         hosts = allowed_hosts(settings.thetender_base_url)
         if user_id is not None and is_allowed_destination(url, hosts):
             url = tracked_url(
@@ -195,7 +202,7 @@ def render(
             )
         ]
     )
-    text = campaign.message.strip()
+    text = tag_text_links(campaign.message.strip(), DIGEST, f"campaign_{campaign.id}")
     if preview:
         text = f"🧪 <i>Тестове повідомлення розсилки</i>\n\n{text}"
     return text, InlineKeyboardMarkup(inline_keyboard=rows)

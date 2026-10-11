@@ -43,6 +43,8 @@ class User(Base):
     marketing_opt_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set when personal data was anonymized after a completed privacy request.
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Deep-link /start parameter that brought the user (site_header, ads, group_x, ...).
+    acquisition_source: Mapped[str | None] = mapped_column(String(64), index=True)
     # Access to the bot closed by an administrator (e.g. a competitor).
     access_blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     access_blocked_by: Mapped[int | None] = mapped_column(

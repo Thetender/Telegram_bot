@@ -18,6 +18,7 @@
       <dt>Телефон</dt><dd>{{ p.user.phone or '—' }}</dd>
       <dt>Telegram</dt><dd>{% if p.user.username %}@{{ p.user.username }} · {% endif %}{{ p.user.telegram_id }}</dd>
       <dt>Реєстрація</dt><dd>{{ fmt_dt(p.user.registered_at) }}</dd>
+      <dt>Джерело залучення</dt><dd>{{ p.user.acquisition_source or '—' }}</dd>
       <dt>Остання активність</dt><dd>{{ fmt_dt(p.user.last_activity_at) }}</dd>
       <dt>Маркетинг</dt><dd>{{ 'Вимкнено' if p.user.marketing_opt_out_at else 'Увімкнено' }}</dd>
       <dt>Бот заблоковано</dt><dd>{{ fmt_dt(p.user.bot_blocked_at) if p.user.bot_blocked_at else 'Ні' }}</dd>

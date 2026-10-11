@@ -11,8 +11,9 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SOURCES = {"S": "SEARCH", "N": "NOTIFICATION", "C": "CAMPAIGN"}
 _SIG_BYTES = 12
@@ -88,6 +89,81 @@ def tracked_url(
     if not public_base_url or not key:
         return url
     return f"{public_base_url}/r/{make_token(key, user_id, url, source, auction_number)}"
+
+
+# ---------- UTM tags for links to thetender.com.ua (GA4 attribution) ----------
+
+UTM_SOURCE = "telegram"
+UTM_MEDIUM = "bot"
+# utm_campaign values by scenario.
+LOT_ALERT, DIGEST, SEARCH, MENU, REMINDER, SUPPORT = (
+    "lot_alert", "digest", "search", "menu", "reminder", "support"
+)  # fmt: skip
+_LOT_ID = re.compile(r"^[A-Z0-9][A-Z0-9-]{3,63}$")
+
+
+def _slug(value: str) -> str:
+    """Latin, lowercase, words joined with «_»."""
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")[:64]
+
+
+def is_tender_site(url: str) -> bool:
+    """The marketplace site itself (not this bot's own tg.* service host)."""
+    return (urlsplit(url).hostname or "").lower() in ("thetender.com.ua", "www.thetender.com.ua")
+
+
+def with_utm(url: str, campaign: str, content: str | None = None) -> str:
+    """Add utm_* to a thetender.com.ua link; other sites are returned unchanged.
+
+    Existing utm_* parameters are replaced, other query parameters and the
+    #fragment are kept. No personal data ever goes into the tags.
+    """
+    if not url or not is_tender_site(url):
+        return url
+    parts = urlsplit(url)
+    if not parts.path:
+        parts = parts._replace(path="/")
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+             if not k.lower().startswith("utm_")]  # fmt: skip
+    query += [("utm_source", UTM_SOURCE), ("utm_medium", UTM_MEDIUM)]
+    query.append(("utm_campaign", _slug(campaign)))
+    if content:
+        # A lot id stays as is (e.g. LAE001-UA-20261008-38094); names are slugified.
+        value = content if _LOT_ID.match(content) else _slug(content)
+        if value:
+            query.append(("utm_content", value))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+_URL_IN_TEXT = re.compile(r"https?://[^\s\"'<>]+")
+
+
+def tag_text_links(text: str, campaign: str, content: str | None = None) -> str:
+    """Tag every thetender.com.ua link inside a message (bare or in href)."""
+
+    def repl(m: re.Match[str]) -> str:
+        url = m.group(0)
+        tail = ""
+        while url and url[-1] in ".,;:!?)":  # sentence punctuation is not part of a URL
+            tail = url[-1] + tail
+            url = url[:-1]
+        return with_utm(url.replace("&amp;", "&"), campaign, content).replace("&", "&amp;") + tail
+
+    return _URL_IN_TEXT.sub(repl, text) if text else text
+
+
+# ---------- deep links: https://t.me/<bot>?start=<source> ----------
+
+_FIXED_SOURCES = {"site_header", "site_footer", "site_lot", "site_contacts", "ads"}
+_GROUP_SOURCE = re.compile(r"^group_[a-z0-9_]{1,40}$")
+
+
+def acquisition_source(payload: str | None) -> str | None:
+    """Validated /start parameter, or None for anything unexpected."""
+    value = (payload or "").strip().lower()
+    if value in _FIXED_SOURCES or _GROUP_SOURCE.match(value):
+        return value
+    return None
 
 
 _BOT_UA_MARKERS = ("bot", "crawler", "spider", "preview", "facebookexternalhit", "slurp")

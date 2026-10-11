@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,7 @@ from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import User
-from app.services import access, events, legal
+from app.services import access, events, legal, links
 from app.services import users as users_svc
 from app.services.phone import normalize_phone
 
@@ -35,17 +35,27 @@ def create_router() -> Router:
         state: FSMContext,
         user: User | None,
         roles: set[str],
+        command: CommandObject,
     ) -> None:
         await state.clear()
+        source = links.acquisition_source(command.args)
         if user is not None:
-            await events.log_event(session, events.BOT_STARTED, user_id=user.id)
+            await events.log_event(
+                session, events.BOT_STARTED, user_id=user.id, data={"source": source}
+            )
             await message.answer(t.MAIN_MENU, reply_markup=kb.main_menu(roles))
             return
         await events.log_event(
             session,
             events.BOT_STARTED,
-            data={"telegram_id": message.from_user.id if message.from_user else None},
+            data={
+                "telegram_id": message.from_user.id if message.from_user else None,
+                "source": source,
+            },
         )
+        if source:
+            # Kept until the phone is shared, then saved in the profile.
+            await state.update_data(acquisition_source=source)
         await send_registration_screen(message, session)
 
     @router.message(F.contact)
@@ -85,6 +95,9 @@ def create_router() -> Router:
             await events.log_event(session, events.USER_REGISTERED, user_id=reg_user.id)
             created = True
 
+        source = (await state.get_data()).get("acquisition_source")
+        if created and source and reg_user.acquisition_source is None:
+            reg_user.acquisition_source = links.acquisition_source(source)
         versions = await legal.get_active_versions(session)
         await legal.record_acceptance(session, reg_user.id, [v.id for v in versions.values()])
         await state.clear()

@@ -105,9 +105,9 @@ async def test_marketing_opt_out_toggle(harness, db):
     # Double tap does not create a second event
     await harness.feed(callback_update(UID, kb.MarketingCb(enable=False).pack()))
     events = await db.scalar(
-        select(func.count()).select_from(Event).where(
-            Event.event_type == "MARKETING_PREFERENCE_CHANGED"
-        )
+        select(func.count())
+        .select_from(Event)
+        .where(Event.event_type == "MARKETING_PREFERENCE_CHANGED")
     )
     assert events == 1
 

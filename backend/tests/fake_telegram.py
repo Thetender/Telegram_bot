@@ -13,8 +13,8 @@ from typing import Any
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.methods import EditMessageText, GetMe, SendMessage, TelegramMethod
-from aiogram.types import CallbackQuery, Chat, Contact, Message, Update
+from aiogram.methods import EditMessageText, GetMe, SendDocument, SendMessage, TelegramMethod
+from aiogram.types import CallbackQuery, Chat, Contact, Document, Message, Update
 from aiogram.types import User as TgUser
 
 BOT_ID = 42
@@ -50,6 +50,14 @@ class FakeSession(BaseSession):
                 date=datetime.now(UTC),
                 chat=Chat(id=int(chat_id), type="private"),
                 text=method.text,
+            )
+        if isinstance(method, SendDocument):
+            return Message(
+                message_id=next(self._ids),
+                date=datetime.now(UTC),
+                chat=Chat(id=int(method.chat_id), type="private"),
+                caption=method.caption,
+                document=Document(file_id=f"FILE{next(self._ids)}", file_unique_id="u"),
             )
         return True
 

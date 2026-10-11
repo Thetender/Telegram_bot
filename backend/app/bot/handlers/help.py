@@ -8,7 +8,13 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import filters
@@ -98,6 +104,39 @@ async def show_faq(callback: CallbackQuery, session: AsyncSession, section: str)
     await show(callback, t.FAQ_TITLE, InlineKeyboardMarkup(inline_keyboard=rows))
 
 
+async def show_link_or_doc(
+    callback: CallbackQuery, session: AsyncSession, section: str, sec: bot_texts.Section
+) -> None:
+    """A Help section configured as «link with a description» or «document»."""
+    back = [InlineKeyboardButton(text=t.BTN_BACK, callback_data=kb.HelpCb(section="menu").pack())]
+    description = links.tag_text_links(sec.text, links.SUPPORT, section)
+    if sec.mode == bot_texts.LINK:
+        url = links.with_utm(sec.button_url or "", links.SUPPORT, section)
+        rows = [[InlineKeyboardButton(text=sec.button_text or bot_texts.DEFAULT_BUTTON, url=url)]]
+        await show(
+            callback,
+            description or f"<b>{html.escape(sec.title)}</b>",
+            InlineKeyboardMarkup(inline_keyboard=[*rows, back]),
+        )
+        return
+    # Document: sent as a file into the chat (cached by Telegram after the first upload).
+    document: str | BufferedInputFile | None = sec.file_id
+    if document is None:
+        content = await bot_texts.file_content(session, sec.key)
+        if not content:
+            await show(callback, f"<b>{html.escape(sec.title)}</b>", kb.back_to_help())
+            return
+        document = BufferedInputFile(content, filename=sec.file_name or "document.pdf")
+    sent = await callback.bot.send_document(
+        callback.from_user.id,
+        document,
+        caption=description or None,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[back]),
+    )
+    if sec.file_id is None and sent.document is not None:
+        await bot_texts.remember_file_id(session, sec.key, sent.document.file_id)
+
+
 def create_router() -> Router:
     router = Router(name="help")
     router.callback_query.filter(filters.registered)
@@ -121,6 +160,10 @@ def create_router() -> Router:
         if section == "menu":
             versions = await legal.get_active_versions(session)
             await show(callback, t.HELP_TITLE, kb.help_menu(versions))
+        elif (section == "faq" or section in STATIC_SECTIONS) and (
+            sec := await bot_texts.get_section(session, STATIC_SECTIONS[section])
+        ).mode != bot_texts.TEXT:
+            await show_link_or_doc(callback, session, section, sec)
         elif section == "faq" or section.startswith("q"):
             await show_faq(callback, session, section)
         elif section in STATIC_SECTIONS:

@@ -495,6 +495,14 @@ class BotText(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+    # What the section shows: text | link (description + URL button) | doc (file).
+    mode: Mapped[str] = mapped_column(String(8), nullable=False, server_default="text")
+    button_text: Mapped[str | None] = mapped_column(String(64))
+    button_url: Mapped[str | None] = mapped_column(String(1024))
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    file_content: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    # Telegram file_id after the first upload: later sends are instant.
+    file_id: Mapped[str | None] = mapped_column(String(255))
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
 

@@ -243,7 +243,12 @@ def create_router() -> Router:
         if data.get("mode") == "rename":
             draft = await svc.get_edit(session, user.id)
             if draft is not None:
-                await edit_or_send(callback, *render_edit_screen(draft.name, draft.params))
+                await edit_or_send(
+                    callback,
+                    *render_edit_screen(
+                        draft.name, draft.params, await svc.edit_changed(session, draft)
+                    ),
+                )
                 return
         await edit_or_send(callback, t.MON_CREATE_CANCELLED, None)
 
@@ -268,7 +273,9 @@ def create_router() -> Router:
             await svc.rename_edit(session, user.id, name)
             draft = await svc.get_edit(session, user.id)
             assert draft is not None
-            text, markup = render_edit_screen(draft.name, draft.params)
+            text, markup = render_edit_screen(
+                draft.name, draft.params, await svc.edit_changed(session, draft)
+            )
             await message.answer(text, reply_markup=markup)
             return
         await create_from_snapshot(
@@ -344,7 +351,10 @@ def create_router() -> Router:
         if row is None:
             return
         draft = await svc.start_edit(session, user.id, row)
-        await edit_or_send(callback, *render_edit_screen(draft.name, draft.params))
+        await edit_or_send(
+            callback,
+            *render_edit_screen(draft.name, draft.params, await svc.edit_changed(session, draft)),
+        )
         await callback.answer()
 
     @router.callback_query(MCb.filter(F.a == "rename"))

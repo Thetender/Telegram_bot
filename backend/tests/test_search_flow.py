@@ -328,3 +328,7 @@ async def test_search_completed_event(harness):
     async with h.sf() as s:
         ev = await s.scalar(select(Event).where(Event.event_type == "SEARCH_COMPLETED"))
     assert ev.event_data["items_count"] == 60
+
+
+def test_visible_len_counts_emoji_like_telegram():
+    assert visible_len("<b>💰 1</b>") == 4  # 💰 is two UTF-16 code units

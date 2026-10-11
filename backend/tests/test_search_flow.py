@@ -58,9 +58,10 @@ async def test_open_search_screen_and_resume_draft(harness):
     await tap(h, "set", "auction_type=rent")
     # After a choice: summary with values as text + 4 buttons.
     assert "• Продаж / Оренда: Оренда" in h.tg.texts()[-1]
-    assert labels(h) == [t.BTN_RUN_SEARCH, t.BTN_EDIT_PARAMS, t.BTN_CLEAR_PARAMS, t.BTN_MAIN_MENU]
-    await tap(h, "grid")
-    assert "✅ Продаж / Оренда" in labels(h) and labels(h)[-1] == t.BTN_BACK
+    # One screen: all parameters (✅ chosen) + Search / Clear / Main menu.
+    assert "✅ Продаж / Оренда" in labels(h) and t.BTN_P_PRICE in labels(h)
+    assert labels(h)[-3:] == [t.BTN_RUN_SEARCH, t.BTN_CLEAR_PARAMS, t.BTN_MAIN_MENU]
+    assert t.BTN_EDIT_PARAMS not in labels(h)
     # Leave and come back: draft is resumed.
     await say(h, t.BTN_HELP)
     await say(h, t.BTN_SEARCH)
@@ -271,7 +272,7 @@ async def test_change_params_from_old_result_asks_before_overwriting(harness):
     assert (await draft(h))["auction_type"] == "rent"  # not overwritten yet
     await h.feed(callback_update(UID, RCb(a="editok", s=snap_a.id).pack()))
     assert (await draft(h))["auction_type"] == "sale"
-    assert t.CHOOSE_PARAM in h.tg.texts()[-1]  # straight to the grid
+    assert t.BTN_RUN_SEARCH in labels(h)  # parameters screen
 
 
 async def test_change_params_opens_grid_directly(harness):
@@ -280,8 +281,7 @@ async def test_change_params_opens_grid_directly(harness):
     snap = await run_search(h, auction_type="sale")
     h.tg.clear()
     await h.feed(callback_update(UID, RCb(a="edit", s=snap.id).pack()))
-    assert t.CHOOSE_PARAM in h.tg.texts()[-1]
-    assert "✅ Продаж / Оренда" in labels(h) and labels(h)[-1] == t.BTN_BACK
+    assert "✅ Продаж / Оренда" in labels(h) and t.BTN_RUN_SEARCH in labels(h)
 
 
 async def test_new_search_without_unsaved_changes_clears_immediately(harness):

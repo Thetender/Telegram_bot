@@ -263,3 +263,18 @@ async def test_monitoring_message_is_shown_for_another_users_id(harness):
     h.tg.clear()
     await h.feed(callback_update(other, MCb(a="delok", i=row.id).pack()))
     assert [r.id for r in await local(h)] == [row.id]  # untouched
+
+
+async def test_edit_screen_offers_save_only_after_a_change(harness):
+    h = harness
+    await register(h)
+    snap = await run_search(h, auction_type="sale")
+    await h.feed(callback_update(UID, RCb(a="mon", s=snap.id).pack()))
+    await say(h, "Продаж")
+    (row,) = await local(h)
+    await mtap(h, "edit", row.id)
+    texts = [b.text for r in last_markup(h).inline_keyboard for b in r]
+    assert t.BTN_SAVE_CHANGES not in texts
+    await etap(h, "set", "auction_type=rent")
+    texts = [b.text for r in last_markup(h).inline_keyboard for b in r]
+    assert texts[0] == t.BTN_SAVE_CHANGES

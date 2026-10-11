@@ -242,3 +242,9 @@ def suggested_name(params: dict[str, Any]) -> str:
     parts = [value for _, value in summary_lines(params)][:3]
     name = " · ".join(parts) or "Мій моніторинг"
     return name if len(name) <= MAX_NAME_LEN else name[: MAX_NAME_LEN - 1] + "…"
+
+
+async def edit_changed(session: AsyncSession, draft: MonitoringEditDraft) -> bool:
+    """True when the edit copy differs from the saved monitoring."""
+    row = await session.get(Monitoring, draft.monitoring_id)
+    return row is None or row.name != draft.name or normalize(row.params) != normalize(draft.params)

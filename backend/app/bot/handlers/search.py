@@ -110,7 +110,9 @@ async def home_screen(
         draft = await mon_svc.get_edit(session, user.id)
         if draft is None:
             return None
-        return render_edit_screen(draft.name, normalize(draft.params))
+        return render_edit_screen(
+            draft.name, normalize(draft.params), await mon_svc.edit_changed(session, draft)
+        )
     if params is None:
         params = await search_svc.get_draft(session, user.id)
     return render_screen(params)
@@ -119,55 +121,11 @@ async def home_screen(
 # ---------- rendering ----------
 
 
-def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
-    """Search "home" screen.
-
-    With chosen parameters: a short summary with the values as text and four
-    buttons (Search / Add-change / Clear / Main menu), so the text stays on
-    screen. With nothing chosen yet: straight to the parameter grid."""
-    p = normalize(params)
-    summary = summary_lines(p)
-    if not summary:
-        return render_grid(p)
-    lines = [t.SEARCH_TITLE, "", "<b>Обрані параметри:</b>"]
-    lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
-    rows = [
-        [_btn(t.BTN_RUN_SEARCH, "run")],
-        [_btn(t.BTN_EDIT_PARAMS, "grid")],
-        [_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")],
-    ]
-    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def render_edit_screen(name: str, params: dict) -> tuple[str, InlineKeyboardMarkup]:
-    """Monitoring edit "home": name + current filters, explicit save."""
-    summary = summary_lines(params)
-    lines = [t.MON_EDIT_TITLE, "", t.MON_NAME_LINE.format(name=html.escape(name)), ""]
-    if summary:
-        lines.append("<b>Параметри:</b>")
-        lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
-    else:
-        lines.append(t.MON_EDIT_NO_PARAMS)
-    lines += ["", t.MON_EDIT_HINT]
-    rows = [
-        [InlineKeyboardButton(text=t.BTN_SAVE_CHANGES, callback_data=MCb(a="save").pack())],
-        [_btn(t.BTN_EDIT_PARAMS, "grid", d=EDIT)],
-        [InlineKeyboardButton(text=t.BTN_RENAME, callback_data=MCb(a="rename").pack())],
-        [InlineKeyboardButton(text=t.BTN_CANCEL_EDIT, callback_data=MCb(a="cancel").pack())],
-    ]
-    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def render_grid(
-    params: dict, d: str = "", name: str | None = None
-) -> tuple[str, InlineKeyboardMarkup]:
-    """Parameter grid: ✅ marks parameters that are already chosen."""
-    p = normalize(params)
-
+def _param_rows(p: dict, d: str) -> list[list[InlineKeyboardButton]]:
     def mark(label: str, is_set: bool) -> str:
         return f"✅ {label}" if is_set else label
 
-    rows = [
+    return [
         [
             _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal", d=d),
             _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type", d=d),
@@ -186,13 +144,63 @@ def render_grid(
         ],
         [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area", d=d)],
     ]
+
+
+def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Search "home" screen: chosen values as text on top, then every
+    parameter (✅ = chosen) plus Search / Clear / Main menu on one screen."""
+    p = normalize(params)
+    summary = summary_lines(p)
+    if not summary:
+        return render_grid(p)
+    lines = [t.SEARCH_TITLE, "", "<b>Обрані параметри:</b>"]
+    lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    rows = _param_rows(p, "")
+    rows.append([_btn(t.BTN_RUN_SEARCH, "run")])
+    rows.append([_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_edit_screen(
+    name: str, params: dict, changed: bool = True
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Monitoring edit "home": name + current filters, explicit save."""
+    summary = summary_lines(params)
+    lines = [t.MON_EDIT_TITLE, "", t.MON_NAME_LINE.format(name=html.escape(name)), ""]
+    if summary:
+        lines.append("<b>Параметри:</b>")
+        lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    else:
+        lines.append(t.MON_EDIT_NO_PARAMS)
+    lines += ["", t.MON_EDIT_HINT]
+    rows = [
+        [_btn(t.BTN_EDIT_PARAMS, "grid", d=EDIT)],
+        [InlineKeyboardButton(text=t.BTN_RENAME, callback_data=MCb(a="rename").pack())],
+        [InlineKeyboardButton(text=t.BTN_CANCEL_EDIT, callback_data=MCb(a="cancel").pack())],
+    ]
+    if changed:
+        rows.insert(
+            0, [InlineKeyboardButton(text=t.BTN_SAVE_CHANGES, callback_data=MCb(a="save").pack())]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_grid(
+    params: dict, d: str = "", name: str | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Parameter grid: ✅ marks parameters that are already chosen."""
+    p = normalize(params)
+
+    def mark(label: str, is_set: bool) -> str:
+        return f"✅ {label}" if is_set else label
+
+    rows = _param_rows(p, d)
     if d == EDIT:
         title = t.MON_EDIT_TITLE + (f" «{html.escape(name)}»" if name else "")
         text = f"{title}\n\n{t.CHOOSE_PARAM}"
         rows.append([_btn(t.BTN_BACK, "open", d=d)])
     elif summary_lines(p):
-        text = f"{t.SEARCH_TITLE}\n\n{t.CHOOSE_PARAM}"
-        rows.append([_btn(t.BTN_BACK, "open")])
+        return render_screen(p)
     else:
         text = f"{t.SEARCH_TITLE}\n\n{t.SEARCH_HINT}"
         rows.append([_btn(t.BTN_MAIN_MENU, "menu")])

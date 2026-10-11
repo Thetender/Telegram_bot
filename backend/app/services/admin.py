@@ -48,6 +48,8 @@ class Overview:
     monitorings_active: int = 0
     monitorings_new: int = 0
     notifications_sent: int = 0
+    # (acquisition source or None, users total, new in the period), largest first
+    sources: list[tuple[str | None, int, int]] = field(default_factory=list)
 
 
 async def overview(session: AsyncSession, period_days: int, tz: str) -> Overview:
@@ -108,7 +110,19 @@ async def overview(session: AsyncSession, period_days: int, tz: str) -> Overview
         .select_from(Event)
         .where(Event.event_type == events.AUCTION_NOTIFICATION_SENT, Event.created_at >= since)
     )
+    rows = await session.execute(
+        select(
+            User.acquisition_source,
+            func.count(),
+            func.count().filter(User.registered_at >= since),
+        )
+        .where(active_users)
+        .group_by(User.acquisition_source)
+        .order_by(func.count().desc())
+    )
+    sources = [(src, int(total), int(new)) for src, total, new in rows]
     return Overview(
+        sources=sources,
         monitorings_active=monitorings_active or 0,
         monitorings_new=monitorings_new or 0,
         notifications_sent=notifications_sent or 0,

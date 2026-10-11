@@ -59,7 +59,8 @@ async def test_reacceptance_gate_blocks_interactive_functions_until_accepted(har
     (gate,) = h.tg.sent()
     assert gate.text.startswith("📄 <b>Ми оновили Умови використання</b>")
     urls = [b.url for row in gate.reply_markup.inline_keyboard for b in row if b.url]
-    assert urls == ["https://thetender.com.ua/terms-2.0"]
+    assert [u.split("?")[0] for u in urls] == ["https://thetender.com.ua/terms-2.0"]
+    assert "utm_campaign=menu" in urls[0]
 
     # Old callbacks are gated too (and the callback is answered).
     h.tg.clear()

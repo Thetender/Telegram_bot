@@ -11,6 +11,7 @@ from aiogram.types import (
 from app.bot import texts as t
 from app.models import ROLE_MANAGER
 from app.services.legal import PRIVACY, TERMS, ActiveLegalVersion
+from app.services.links import MENU, with_utm
 
 
 class HelpCb(CallbackData, prefix="h"):
@@ -56,9 +57,21 @@ def share_phone() -> ReplyKeyboardMarkup:
 def legal_links(versions: dict[str, ActiveLegalVersion]) -> InlineKeyboardMarkup | None:
     buttons = []
     if TERMS in versions:
-        buttons.append([InlineKeyboardButton(text=t.BTN_TERMS, url=versions[TERMS].public_url)])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=t.BTN_TERMS, url=with_utm(versions[TERMS].public_url, MENU, "terms")
+                )
+            ]
+        )
     if PRIVACY in versions:
-        buttons.append([InlineKeyboardButton(text=t.BTN_PRIVACY, url=versions[PRIVACY].public_url)])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=t.BTN_PRIVACY, url=with_utm(versions[PRIVACY].public_url, MENU, "privacy")
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
 
 
@@ -72,9 +85,21 @@ def help_menu(versions: dict[str, ActiveLegalVersion]) -> InlineKeyboardMarkup:
         [cb(t.BTN_ABOUT, "about")],
     ]
     if TERMS in versions:
-        rows.append([InlineKeyboardButton(text=t.BTN_TERMS, url=versions[TERMS].public_url)])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=t.BTN_TERMS, url=with_utm(versions[TERMS].public_url, MENU, "terms")
+                )
+            ]
+        )
     if PRIVACY in versions:
-        rows.append([InlineKeyboardButton(text=t.BTN_PRIVACY, url=versions[PRIVACY].public_url)])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=t.BTN_PRIVACY, url=with_utm(versions[PRIVACY].public_url, MENU, "privacy")
+                )
+            ]
+        )
     rows.append([cb(t.BTN_NOTIFICATION_SETTINGS, "settings")])
     rows.append([cb(t.BTN_DELETE_DATA, "delete")])
     rows.append([cb(t.BTN_MAIN_MENU, "home")])
@@ -115,7 +140,9 @@ def legal_gate(pending: list[ActiveLegalVersion]) -> InlineKeyboardMarkup:
     rows = []
     for v in pending:
         text = t.BTN_TERMS if v.doc_type == TERMS else t.BTN_PRIVACY
-        rows.append([InlineKeyboardButton(text=text, url=v.public_url)])
+        rows.append(
+            [InlineKeyboardButton(text=text, url=with_utm(v.public_url, MENU, v.doc_type.lower()))]
+        )
     rows.append(
         [
             InlineKeyboardButton(

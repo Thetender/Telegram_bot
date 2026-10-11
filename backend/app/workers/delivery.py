@@ -36,7 +36,7 @@ from app.models import (
     NotificationDelivery,
     User,
 )
-from app.services import alerts, events
+from app.services import alerts, events, links
 from app.services import campaigns as campaigns_svc
 from app.services.links import tracked_url
 from app.services.search_params import format_number
@@ -73,7 +73,7 @@ def render(delivery: NotificationDelivery, user: User, settings: Settings) -> st
             settings.public_base_url,
             settings.link_signing_key,
             user.id,
-            url,
+            links.with_utm(url, links.LOT_ALERT, str(a.get("number") or "") or None),
             "NOTIFICATION",
             str(a.get("number") or "") or None,
         )

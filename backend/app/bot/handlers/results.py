@@ -20,7 +20,7 @@ from app.config import Settings
 from app.integrations.thetender import Auction, TenderClient, TenderError
 from app.integrations.thetender.client import DEFAULT_PAGESIZE
 from app.models import SearchSnapshot, User
-from app.services import events
+from app.services import events, links
 from app.services import search as search_svc
 from app.services.links import tracked_url
 from app.services.search_params import format_number, normalize, to_api
@@ -167,7 +167,7 @@ async def send_results_page(
                 settings.public_base_url,
                 settings.link_signing_key,
                 user.id,
-                a.url,
+                links.with_utm(a.url, links.SEARCH, a.number),
                 "SEARCH",
                 a.number,
             ),

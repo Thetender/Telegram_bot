@@ -33,4 +33,18 @@
   <div class="legend"><span><i style="background:#1f4fd1"></i>Реєстрації</span><span><i style="background:#9db5f5"></i>Пошуки</span>
     <span>{{ o.series[0][0].strftime('%d.%m') }} — {{ o.series[-1][0].strftime('%d.%m') }}</span><span>макс. за день: {{ peak }}</span></div>
 </div>
+<div class="card">
+  <div style="font-weight:600;margin-bottom:8px">Джерела залучення</div>
+  <p class="muted" style="margin:0 0 8px">Параметр посилання <code>t.me/бот?start=…</code>, з яким користувач уперше відкрив бота.</p>
+  <table>
+    <thead><tr><th>Джерело</th><th>Усього</th><th>Нових за {{ o.period_days }} днів</th></tr></thead>
+    <tbody>
+    {% for src, total, new in o.sources %}
+      <tr><td>{{ src or '— без мітки (пряме відкриття)' }}</td><td>{{ total }}</td><td>{{ new }}</td></tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">Поки немає даних</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

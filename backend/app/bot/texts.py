@@ -4,6 +4,8 @@ Help-section texts marked TODO(content) are placeholders until the product
 owner provides final copy.
 """
 
+from pathlib import Path
+
 # --- Main menu buttons (persistent reply keyboard) ---
 BTN_SEARCH = "🔎 Пошук аукціонів"
 BTN_MONITORINGS = "🔔 Мої моніторинги"
@@ -58,7 +60,10 @@ BTN_NOTIFICATION_SETTINGS = "⚙️ Налаштування повідомле�
 BTN_DELETE_DATA = "🗑 Видалити мої персональні дані"
 
 # TODO(content): replace with final copy from the product owner.
-HELP_FAQ = "❓ <b>Часті запитання</b>\n\n<i>Текст розділу буде додано найближчим часом.</i>"
+# FAQ: numbered questions ("1. Питання?" on its own line) become buttons in the bot.
+HELP_FAQ = (Path(__file__).parent / "faq_default.txt").read_text(encoding="utf-8").strip()
+FAQ_TITLE = "❓ <b>Часті запитання</b>\n\nОберіть питання 👇"
+BTN_TO_QUESTIONS = "◀️ До питань"
 HELP_ABOUT = "ℹ️ <b>Про Prozorro.Продажі</b>\n\n<i>Текст розділу буде додано найближчим часом.</i>"
 HELP_TARIFFS = "💳 <b>Тарифи</b>\n\n<i>Текст розділу буде додано найближчим часом.</i>"
 # --- Legal re-acceptance (Iteration 6) ---

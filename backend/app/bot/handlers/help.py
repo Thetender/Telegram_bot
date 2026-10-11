@@ -8,7 +8,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import filters
@@ -62,6 +62,41 @@ async def notify_admins_about_deletion(
             log.info("Privacy notice to admin %s not sent: %s", admin.id, exc)
 
 
+async def show_faq(callback: CallbackQuery, session: AsyncSession, section: str) -> None:
+    """FAQ as a list of questions; each answer opens separately."""
+    text = await bot_texts.get(session, "HELP_FAQ")
+    items = bot_texts.parse_faq(text)
+    if not items:  # free-form text without numbered questions
+        await show(callback, text, kb.back_to_help())
+        return
+    if section.startswith("q") and section[1:].isdigit() and int(section[1:]) < len(items):
+        question, answer = items[int(section[1:])]
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t.BTN_TO_QUESTIONS, callback_data=kb.HelpCb(section="faq").pack()
+                    )
+                ]
+            ]
+        )
+        await show(callback, f"<b>{question}</b>\n\n{answer}", markup)
+        return
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=q if len(q) <= 60 else q[:59] + "…",
+                callback_data=kb.HelpCb(section=f"q{i}").pack(),
+            )
+        ]
+        for i, (q, _) in enumerate(items)
+    ]
+    rows.append(
+        [InlineKeyboardButton(text=t.BTN_BACK, callback_data=kb.HelpCb(section="menu").pack())]
+    )
+    await show(callback, t.FAQ_TITLE, InlineKeyboardMarkup(inline_keyboard=rows))
+
+
 def create_router() -> Router:
     router = Router(name="help")
     router.callback_query.filter(filters.registered)
@@ -85,6 +120,8 @@ def create_router() -> Router:
         if section == "menu":
             versions = await legal.get_active_versions(session)
             await show(callback, t.HELP_TITLE, kb.help_menu(versions))
+        elif section == "faq" or section.startswith("q"):
+            await show_faq(callback, session, section)
         elif section in STATIC_SECTIONS:
             text = await bot_texts.get(session, STATIC_SECTIONS[section])
             await show(callback, text, kb.back_to_help())

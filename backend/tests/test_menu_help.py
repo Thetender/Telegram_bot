@@ -82,7 +82,7 @@ async def test_help_sections(harness):
     await harness.feed(callback_update(UID, kb.HelpCb(section="home").pack()))
     assert harness.tg.texts() == [t.MAIN_MENU]
 
-    sections = [("faq", t.HELP_FAQ), ("about", t.HELP_ABOUT), ("tariffs", t.HELP_TARIFFS)]
+    sections = [("faq", t.FAQ_TITLE), ("about", t.HELP_ABOUT), ("tariffs", t.HELP_TARIFFS)]
     for section, expected in sections:
         harness.tg.clear()
         await harness.feed(callback_update(UID, kb.HelpCb(section=section).pack()))
@@ -166,3 +166,15 @@ def test_text_constants_are_not_redefined():
         if isinstance(target, ast.Name)
     ]
     assert len(names) == len(set(names)), sorted({n for n in names if names.count(n) > 1})
+
+
+async def test_faq_questions_open_answers(harness):
+    await register(harness)
+    await harness.feed(callback_update(UID, kb.HelpCb(section="faq").pack()))
+    markup = harness.tg.sent()[-1].reply_markup
+    labels = [row[0].text for row in markup.inline_keyboard]
+    assert labels[0] == "Що таке The Tender?" and len(labels) == 19  # 18 + back
+    harness.tg.clear()
+    await harness.feed(callback_update(UID, kb.HelpCb(section="q17").pack()))
+    assert harness.tg.texts()[-1].startswith("<b>Куди звертатися з питаннями?</b>")
+    assert "info@thetender.com.ua" in harness.tg.texts()[-1]

@@ -26,7 +26,7 @@ from app.db import make_engine, make_session_factory
 from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
 from app.models import LegalDocumentVersion, User
-from app.services import alerts, events, notifications
+from app.services import alerts, error_log, events, notifications
 from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
 from app.workers.delivery import DeliveryWorker
 
@@ -57,6 +57,7 @@ def create_app(
         app.state.tender = tender or make_tender_client(settings)
         app.state.dp = create_dispatcher(settings, session_factory, app.state.tender)
         alerts.configure(app.state.bot, session_factory, settings.environment)
+        error_log.configure(session_factory)
         app.state.worker = DeliveryWorker(app.state.bot, session_factory, settings)
         if settings.delivery_worker_enabled:
             app.state.worker.start()
@@ -76,6 +77,8 @@ def create_app(
             await app.state.worker.stop()
             await alerts.drain()
             alerts.configure(None, None)
+            await error_log.drain()
+            error_log.configure(None)
             await app.state.bot.session.close()
             await app.state.tender.aclose()
             await engine.dispose()
@@ -127,8 +130,8 @@ def create_app(
             log.exception("Error while handling Telegram update %s", update.update_id)
             alerts.alert(
                 "update_error",
-                "Під час обробки повідомлення користувача сталася помилка. Деталі — в логах "
-                "сервера (пошук «Error while handling Telegram update»).",
+                "Під час обробки повідомлення користувача сталася помилка. Деталі — в адмінці: "
+                "Журнал помилок.",
             )
         return Response(status_code=200)
 

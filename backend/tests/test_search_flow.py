@@ -332,3 +332,19 @@ async def test_search_completed_event(harness):
 
 def test_visible_len_counts_emoji_like_telegram():
     assert visible_len("<b>💰 1</b>") == 4  # 💰 is two UTF-16 code units
+
+
+async def test_buttons_survive_a_rejected_results_message(harness):
+    from aiogram.exceptions import TelegramBadRequest
+
+    h = harness
+    await register(h)
+    for field in ("auction_type=sale", "start_price_type=eng"):
+        await tap(h, "set", field)
+    await tap(h, "txt", "city")
+    await say(h, "Київ")  # 15 demo results: a single message
+    h.tg.clear()
+    h.tg.raise_next = [TelegramBadRequest(method=None, message="Bad Request: x")]
+    await tap(h, "run")
+    assert h.tg.texts()[-1] == t.RESULTS_ACTIONS
+    assert any(text == t.BTN_NEW_SEARCH for text, _ in buttons(last_markup(h)))

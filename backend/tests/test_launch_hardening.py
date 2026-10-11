@@ -96,3 +96,24 @@ async def test_alerts_reach_admins_once_per_hour(session_factory):
         msgs = sends(d, ADMIN_TG)
         assert len(msgs) == 1 and "Технічне сповіщення бота" in msgs[0].text
         assert "неправильним ключем" in msgs[0].text
+
+
+async def test_errors_are_visible_in_the_dashboard(session_factory):
+    import logging
+
+    from app.services import error_log
+
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        await d.login(ADMIN_TG)
+        try:
+            raise ValueError("boom with ?auth=SECRET123")
+        except ValueError:
+            logging.getLogger("app.test").exception(
+                "Something failed for token 123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            )
+        await error_log.drain()
+        page = await d.client.get("/admin/errors")
+        assert "Something failed" in page.text and "ValueError" in page.text
+        assert "SECRET123" not in page.text and "AAAAAAAAAAAAAAAAAAAA" not in page.text
+

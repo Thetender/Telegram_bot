@@ -2,7 +2,7 @@
 
 Admins with «системні сповіщення» ON get a short message when something
 needs attention (The Tender rejects our API key, unhandled errors, ...).
-Each kind of alert is sent at most once per hour, so a broken dependency
+Each kind of alert is sent at most once per 5 minutes, so a broken dependency
 does not flood the admins. Best effort: alerts are never allowed to break
 the code path that raised them.
 """
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 log = logging.getLogger(__name__)
 
-THROTTLE_SECONDS = 3600.0
+THROTTLE_SECONDS = 300.0
 
 _bot: Bot | None = None
 _sf: async_sessionmaker[AsyncSession] | None = None

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Журнал помилок{% endblock %}
+{% block content %}
+<h1>🧯 Журнал помилок</h1>
+<p class="muted">Останні 200 помилок сервісу за 30 днів. Ключі й токени приховано. Щоб розробник розібрався, скопіюйте текст помилки (кнопка «Деталі») і надішліть йому.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Час</th><th>Модуль</th><th>Помилка</th></tr></thead>
+  <tbody>{% for e in rows %}
+    <tr><td style="white-space:nowrap">{{ fmt_dt(e.created_at) }}</td><td class="muted">{{ e.logger }}</td>
+      <td>{{ e.message }}
+        {% if e.details %}<details {{ 'open' if e.id == open_id }}><summary>Деталі</summary><pre style="white-space:pre-wrap;font-size:12px;max-height:400px;overflow:auto">{{ e.details }}</pre></details>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">Помилок немає 🎉</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

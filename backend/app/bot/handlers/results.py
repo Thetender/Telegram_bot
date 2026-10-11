@@ -7,6 +7,7 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -176,9 +177,22 @@ async def send_results_page(
     ]
     messages = split_messages("\n".join(header_parts), blocks)
     next_page = page + 1 if result.has_more else None
+    markup = results_keyboard(snapshot, next_page)
     for i, text in enumerate(messages):
-        markup = results_keyboard(snapshot, next_page) if i == len(messages) - 1 else None
-        await bot.send_message(chat_id, text, reply_markup=markup)
+        last = i == len(messages) - 1
+        try:
+            await bot.send_message(chat_id, text, reply_markup=markup if last else None)
+        except TelegramAPIError:
+            # Never leave the user without buttons: log the real cause and
+            # send the actions in a separate short message.
+            log.exception(
+                "Results part %s/%s (%s chars) rejected by Telegram",
+                i + 1,
+                len(messages),
+                visible_len(text),
+            )
+            if last:
+                await bot.send_message(chat_id, t.RESULTS_ACTIONS, reply_markup=markup)
     return "sent"
 
 

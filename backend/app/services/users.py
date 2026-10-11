@@ -94,9 +94,12 @@ async def grant_role(
 
 
 async def count_admins(session: AsyncSession) -> int:
-    return await session.scalar(
-        select(func.count()).select_from(UserRole).where(UserRole.role == ROLE_ADMIN)
-    ) or 0
+    return (
+        await session.scalar(
+            select(func.count()).select_from(UserRole).where(UserRole.role == ROLE_ADMIN)
+        )
+        or 0
+    )
 
 
 async def set_marketing_opt_out(session: AsyncSession, user: User, opt_out: bool) -> None:

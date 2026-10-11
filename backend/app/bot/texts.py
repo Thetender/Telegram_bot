@@ -187,6 +187,7 @@ API_ERROR = (
     "⚠️ Не вдалося отримати дані від The Tender. Параметри пошуку збережено — спробуйте ще раз."
 )
 BTN_MORE = "Показати ще"
+RESULTS_ACTIONS = "Що далі? 👇"
 BTN_ENABLE_MONITORING = "🔔 Увімкнути моніторинг"
 BTN_CHANGE_PARAMS = "⚙️ Змінити параметри"
 BTN_NEW_SEARCH = "🔎 Новий пошук"

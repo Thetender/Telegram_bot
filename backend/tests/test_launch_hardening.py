@@ -116,3 +116,4 @@ async def test_errors_are_visible_in_the_dashboard(session_factory):
         page = await d.client.get("/admin/errors")
         assert "Something failed" in page.text and "ValueError" in page.text
         assert "SECRET123" not in page.text and "AAAAAAAAAAAAAAAAAAAA" not in page.text
+

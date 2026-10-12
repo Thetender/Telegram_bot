@@ -159,8 +159,15 @@ async def list_users(
     active_days: int | None = None,
     page: int = 1,
     blocked_only: bool = False,
+    role: str = "",
 ) -> tuple[list[tuple[User, set[str]]], int]:
     stmt = select(User).where(User.anonymized_at.is_(None))
+    if role in (ROLE_MANAGER, ROLE_ADMIN):
+        stmt = stmt.where(
+            select(UserRole.id).where(UserRole.user_id == User.id, UserRole.role == role).exists()
+        )
+    elif role == "NONE":
+        stmt = stmt.where(~select(UserRole.id).where(UserRole.user_id == User.id).exists())
     if blocked_only:
         stmt = stmt.where(User.access_blocked_at.is_not(None))
     if q.strip():

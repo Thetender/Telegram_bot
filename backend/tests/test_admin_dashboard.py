@@ -397,3 +397,22 @@ async def test_overview_periods(session_factory, period):
         await d.login(ADMIN_TG)
         r = await d.client.get("/admin", params={"period": period})
         assert r.status_code == 200 and "Активність по днях" in r.text
+
+
+async def test_users_can_be_filtered_by_role(session_factory):
+    from app.models import ROLE_MANAGER
+
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        await register(d, OTHER_TG, ROLE_MANAGER)
+        await register(d, CLIENT_TG)
+        await d.login(ADMIN_TG)
+
+        async def names(role: str) -> set[int]:
+            page = await d.client.get("/admin/users", params={"role": role})
+            return {tg for tg in (ADMIN_TG, OTHER_TG, CLIENT_TG) if f">{tg}<" in page.text}
+
+        assert await names("MANAGER") == {OTHER_TG}
+        assert await names("ADMIN") == {ADMIN_TG}
+        assert await names("NONE") == {CLIENT_TG}
+        assert await names("") == {ADMIN_TG, OTHER_TG, CLIENT_TG}

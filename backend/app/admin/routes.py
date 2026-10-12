@@ -330,10 +330,12 @@ def create_router() -> APIRouter:
         reg_to: str = "",
         active: str = "",
         blocked: str = "",
+        role: str = "",
         page: int = 1,
     ) -> Response:
         rows, total = await svc.list_users(
             session,
+            role=role,
             q=q,
             registered_from=_parse_date(reg_from),
             registered_to=_parse_date(reg_to),
@@ -351,6 +353,7 @@ def create_router() -> APIRouter:
                     "reg_to": reg_to,
                     "active": active,
                     "blocked": blocked,
+                    "role": role,
                 }.items()
                 if v
             }
@@ -372,6 +375,7 @@ def create_router() -> APIRouter:
             reg_to=reg_to,
             active=active,
             blocked=blocked,
+            role=role,
             base_query=base_query,
         )
 

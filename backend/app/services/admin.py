@@ -159,8 +159,15 @@ async def list_users(
     active_days: int | None = None,
     page: int = 1,
     blocked_only: bool = False,
+    role: str = "",
 ) -> tuple[list[tuple[User, set[str]]], int]:
     stmt = select(User).where(User.anonymized_at.is_(None))
+    if role in (ROLE_MANAGER, ROLE_ADMIN):
+        stmt = stmt.where(
+            select(UserRole.id).where(UserRole.user_id == User.id, UserRole.role == role).exists()
+        )
+    elif role == "NONE":
+        stmt = stmt.where(~select(UserRole.id).where(UserRole.user_id == User.id).exists())
     if blocked_only:
         stmt = stmt.where(User.access_blocked_at.is_not(None))
     if q.strip():
@@ -251,6 +258,11 @@ class UserProfile:
     timeline: list[Event]
     actors: dict[int, User]
     monitorings: list[Monitoring] = field(default_factory=list)
+    notifications: int = 0
+
+
+# Sent BY the system TO the user: counted, but not listed as the user's actions.
+SYSTEM_EVENTS = (events.AUCTION_NOTIFICATION_SENT,)
 
 
 async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | None:
@@ -273,7 +285,10 @@ async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | Non
     timeline = (
         await session.scalars(
             select(Event)
-            .where(or_(Event.user_id == user.id, Event.actor_user_id == user.id))
+            .where(
+                or_(Event.user_id == user.id, Event.actor_user_id == user.id),
+                Event.event_type.not_in(SYSTEM_EVENTS),
+            )
             .order_by(Event.created_at.desc(), Event.id.desc())
             .limit(100)
         )
@@ -291,7 +306,13 @@ async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | Non
             .order_by(Monitoring.created_at)
         )
     ).all()
+    notifications = await session.scalar(
+        select(func.count())
+        .select_from(Event)
+        .where(Event.user_id == user.id, Event.event_type == events.AUCTION_NOTIFICATION_SENT)
+    )
     return UserProfile(
+        notifications=notifications or 0,
         monitorings=list(monitorings),
         user=user,
         roles=roles,

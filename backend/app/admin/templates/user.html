@@ -84,18 +84,21 @@
   {% endfor %}</tbody></table></div>
 {% endif %}
 <h2>Історія дій</h2>
-<div class="card">
+<div class="tabs" style="margin-bottom:10px">
+  <a href="/admin/users/{{ p.user.id }}#history" class="{{ 'active' if not history_kind }}">Усе</a>
+  {% for k, title in history_kinds %}<a href="/admin/users/{{ p.user.id }}?h={{ k }}#history" class="{{ 'active' if history_kind == k }}">{{ title }}</a>{% endfor %}
+</div>
+<div class="card" id="history">
   <ul class="timeline">
-  {% for e in p.timeline %}
-    <li><time>{{ fmt_dt(e.created_at) }}</time>
-      <span>{{ event_labels.get(e.event_type, e.event_type) }}
-        {% if e.event_data.get('items_count') is not none %}<span class="muted">· знайдено {{ e.event_data['items_count'] }}</span>{% endif %}
-        {% if e.event_data.get('role') %}<span class="muted">· {{ e.event_data['role'] }}</span>{% endif %}
-        {% if e.event_data.get('monitoring') %}<span class="muted">· {{ e.event_data['monitoring'] }}</span>{% endif %}
-        {% if e.event_data.get('request_id') %}<span class="muted">· заявка №{{ e.event_data['request_id'] }}</span>{% endif %}
-        {% if e.actor_user_id and e.actor_user_id != p.user.id %}<span class="muted">· {{ p.actors[e.actor_user_id].name if e.actor_user_id in p.actors else 'адміністратор' }}</span>{% endif %}
+  {% for r in p.history %}
+    <li><time>{{ fmt_dt(r.created_at) }}</time>
+      <span>{{ r.label }}{% if r.count > 1 %} <span class="badge">×{{ r.count }}</span>{% endif %}
+        {% if r.link %}· <a href="{{ r.link[1] }}" {% if r.link[1].startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ r.link[0] }}</a>{% endif %}
+        {% for d in r.details %}<span class="muted">· {{ d }}</span> {% endfor %}
+        {% if r.changes %}<ul class="changes">{% for f, before, after in r.changes %}<li><b>{{ f }}:</b> <span class="muted">{{ before }}</span> → {{ after }}</li>{% endfor %}</ul>{% endif %}
       </span></li>
   {% else %}<li class="muted">Подій ще немає.</li>{% endfor %}
   </ul>
 </div>
+<style>.timeline .changes{margin:4px 0 0;padding-left:18px;font-size:13px}.timeline .changes li{border:0;padding:1px 0;display:list-item}</style>
 {% endblock %}

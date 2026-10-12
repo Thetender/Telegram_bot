@@ -28,6 +28,7 @@ from app.models import (
     UserRole,
 )
 from app.services import events
+from app.services import history as history_svc
 from app.services.phone import normalize_phone
 
 PAGE_SIZE = 50
@@ -259,13 +260,16 @@ class UserProfile:
     actors: dict[int, User]
     monitorings: list[Monitoring] = field(default_factory=list)
     notifications: int = 0
+    history: list = field(default_factory=list)
 
 
 # Sent BY the system TO the user: counted, but not listed as the user's actions.
-SYSTEM_EVENTS = (events.AUCTION_NOTIFICATION_SENT,)
+SYSTEM_EVENTS = history_svc.HIDDEN
 
 
-async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | None:
+async def user_profile(
+    session: AsyncSession, user_id: int, kind: str = "", labels: dict[str, str] | None = None
+) -> UserProfile | None:
     user = await session.get(User, user_id)
     if user is None:
         return None
@@ -288,6 +292,11 @@ async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | Non
             .where(
                 or_(Event.user_id == user.id, Event.actor_user_id == user.id),
                 Event.event_type.not_in(SYSTEM_EVENTS),
+                *(
+                    [Event.event_type.in_(history_svc.KINDS[kind][1])]
+                    if kind in history_svc.KINDS
+                    else []
+                ),
             )
             .order_by(Event.created_at.desc(), Event.id.desc())
             .limit(100)
@@ -312,6 +321,7 @@ async def user_profile(session: AsyncSession, user_id: int) -> UserProfile | Non
         .where(Event.user_id == user.id, Event.event_type == events.AUCTION_NOTIFICATION_SENT)
     )
     return UserProfile(
+        history=await history_svc.build(session, list(timeline), labels or {}, actors, user.id),
         notifications=notifications or 0,
         monitorings=list(monitorings),
         user=user,

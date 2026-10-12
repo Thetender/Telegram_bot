@@ -278,3 +278,30 @@ async def test_edit_screen_offers_save_only_after_a_change(harness):
     await etap(h, "set", "auction_type=rent")
     texts = [b.text for r in last_markup(h).inline_keyboard for b in r]
     assert texts[0] == t.BTN_SAVE_CHANGES
+
+
+async def test_history_shows_what_was_searched_and_changed(harness):
+    from app.admin.routes import EVENT_LABELS
+    from app.services.admin import user_profile
+
+    h = harness
+    await register(h)
+    snap = await run_search(h, auction_type="sale")
+    await run_search(h, auction_type="sale")  # same search again → «×2»
+    await h.feed(callback_update(UID, RCb(a="mon", s=snap.id).pack()))
+    await say(h, "Продаж")
+    (row,) = await local(h)
+    await mtap(h, "edit", row.id)
+    await etap(h, "set", "auction_type=rent")
+    await mtap(h, "save")
+    async with h.sf() as s:
+        user = await s.scalar(select(User).where(User.telegram_id == UID))
+        p = await user_profile(s, user.id, labels=EVENT_LABELS)
+        only_monitors = await user_profile(s, user.id, kind="monitor", labels=EVENT_LABELS)
+    by_label = {r.label: r for r in p.history}
+    assert "Відкрив пошук" not in by_label
+    search = by_label["Пошук"]
+    assert search.details[0] == "Продаж" and search.count == 2
+    assert by_label["Створив моніторинг"].details == ["«Продаж»", "Продаж"]
+    assert by_label["Змінив моніторинг"].changes == [["Продаж / Оренда", "Продаж", "Оренда"]]
+    assert {r.label for r in only_monitors.history} == {"Створив моніторинг", "Змінив моніторинг"}

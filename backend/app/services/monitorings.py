@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.thetender import ExternalMonitoring, TenderClient, TenderError
 from app.models import Monitoring, MonitoringEditDraft, User
 from app.services import events
-from app.services.search_params import normalize
+from app.services.search_params import normalize, summary_lines
 
 MAX_NAME_LEN = 100
 MAX_PER_USER = 200
@@ -115,7 +115,12 @@ async def create(
         session,
         events.MONITOR_CREATED,
         user_id=user.id,
-        data={"monitoring_id": row.id, "external_id": ext.id},
+        data={
+            "monitoring_id": row.id,
+            "external_id": ext.id,
+            "name": row.name,
+            "params": normalize(row.params),
+        },
     )
     return row
 
@@ -141,10 +146,18 @@ async def update(
     name: str,
     params: dict[str, Any],
 ) -> Monitoring:
+    old_name, old_params = row.name, normalize(row.params)
     ext = await tender.update_monitoring(row.external_id, tender_user_id(user), name, params)
     row = await _upsert(session, user, ext)
     await events.log_event(
-        session, events.MONITOR_UPDATED, user_id=user.id, data={"monitoring_id": row.id}
+        session,
+        events.MONITOR_UPDATED,
+        user_id=user.id,
+        data={
+            "monitoring_id": row.id,
+            "name": row.name,
+            "changes": param_changes(old_name, old_params, row.name, normalize(row.params)),
+        },
     )
     return row
 
@@ -157,8 +170,23 @@ async def delete(session: AsyncSession, tender: TenderClient, user: User, row: M
             raise
     row.deleted_at = datetime.now(UTC)
     await events.log_event(
-        session, events.MONITOR_DELETED, user_id=user.id, data={"monitoring_id": row.id}
+        session,
+        events.MONITOR_DELETED,
+        user_id=user.id,
+        data={"monitoring_id": row.id, "name": row.name},
     )
+
+
+def param_changes(
+    old_name: str, old: dict[str, Any], new_name: str, new: dict[str, Any]
+) -> list[list[str]]:
+    """[label, before, after] for every changed field, for the activity history."""
+    out = [["Назва", old_name, new_name]] if old_name != new_name else []
+    before, after = dict(summary_lines(old)), dict(summary_lines(new))
+    for label in dict.fromkeys([*before, *after]):
+        if before.get(label) != after.get(label):
+            out.append([label, before.get(label, "—"), after.get(label, "—")])
+    return out
 
 
 # ---------- edit drafts (independent from the search draft) ----------
@@ -237,8 +265,6 @@ def clean_name(text: str | None) -> str | None:
 
 def suggested_name(params: dict[str, Any]) -> str:
     """Default name from the filters, e.g. «Продаж · Київ, Львівська область»."""
-    from app.services.search_params import summary_lines
-
     parts = [value for _, value in summary_lines(params)][:3]
     name = " · ".join(parts) or "Мій моніторинг"
     return name if len(name) <= MAX_NAME_LEN else name[: MAX_NAME_LEN - 1] + "…"

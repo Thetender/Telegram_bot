@@ -94,7 +94,7 @@ async def test_regions_multiselect(harness):
     await tap(h, "regt", str(lviv))  # and on again
     assert (await draft(h))["regions"] == ["Київ", "Львівська область"]
     labels = [text for text, _ in buttons(last_markup(h))]
-    assert "✅ Київ" in labels and "✅ Львівська область" in labels
+    assert "✅ Київ" in labels and "✅ Львівська" in labels
 
 
 async def test_category_from_api(harness):

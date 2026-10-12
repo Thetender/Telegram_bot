@@ -10,7 +10,15 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+
 # Exact region names accepted by The Tender API (API doc §5).
+def region_label(name: str) -> str:
+    """Short button label: «Київська область» → «Київська», Crimea → «АР Крим»."""
+    if name == "Автономна Республіка Крим":
+        return "АР Крим"
+    return name.removesuffix(" область")
+
+
 REGIONS: tuple[str, ...] = (
     "Автономна Республіка Крим",
     "Вінницька область",

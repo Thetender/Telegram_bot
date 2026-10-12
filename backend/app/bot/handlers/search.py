@@ -46,6 +46,7 @@ from app.services.search_params import (
     is_effective,
     normalize,
     parse_number,
+    region_label,
     summary_lines,
 )
 
@@ -232,7 +233,8 @@ def regions_keyboard(selected: list[str], d: str = "") -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for i, name in enumerate(REGIONS):
-        label = f"✅ {name}" if name in chosen else name
+        short = region_label(name)
+        label = f"✅ {short}" if name in chosen else short
         row.append(_btn(label, "regt", str(i), d=d))
         if len(row) == 2:
             rows.append(row)

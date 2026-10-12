@@ -53,6 +53,14 @@ STATUS_LABELS = {
     "CLOSED_BY_ADMIN": "Закрито адміністратором",
 }
 RESULT_LABELS = {"INTERESTED": "👍 Зацікавлений", "DECLINED": "👎 Відмова"}
+
+
+def history_kinds() -> dict:
+    from app.services.history import KINDS
+
+    return KINDS
+
+
 EVENT_LABELS = {
     events.USER_REGISTERED: "Реєстрація",
     events.BOT_STARTED: "Відкрив бота",
@@ -380,8 +388,10 @@ def create_router() -> APIRouter:
         )
 
     @router.get("/users/{user_id}", response_class=HTMLResponse)
-    async def user_detail(request: Request, session: DB, ctx: Admin, user_id: int) -> Response:
-        profile = await svc.user_profile(session, user_id)
+    async def user_detail(
+        request: Request, session: DB, ctx: Admin, user_id: int, h: str = ""
+    ) -> Response:
+        profile = await svc.user_profile(session, user_id, kind=h, labels=EVENT_LABELS)
         if profile is None:
             raise HTTPException(404)
         blocked_by = (
@@ -389,7 +399,16 @@ def create_router() -> APIRouter:
             if profile.user.access_blocked_by
             else None
         )
-        return render(request, "user.html", ctx, "users", p=profile, blocked_by=blocked_by)
+        return render(
+            request,
+            "user.html",
+            ctx,
+            "users",
+            p=profile,
+            blocked_by=blocked_by,
+            history_kinds=[(k, v[0]) for k, v in history_kinds().items()],
+            history_kind=h if h in history_kinds() else "",
+        )
 
     @router.post("/users/{user_id}/access")
     async def user_access(

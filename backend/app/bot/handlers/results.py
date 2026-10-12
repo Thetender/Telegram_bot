@@ -142,7 +142,11 @@ async def send_results_page(
             session,
             events.SEARCH_COMPLETED,
             user_id=user.id,
-            data={"snapshot_id": snapshot.id, "items_count": result.items_count},
+            data={
+                "snapshot_id": snapshot.id,
+                "items_count": result.items_count,
+                "params": snapshot.params,
+            },
         )
 
     if not result.items:

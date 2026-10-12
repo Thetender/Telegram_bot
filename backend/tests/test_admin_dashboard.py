@@ -416,3 +416,19 @@ async def test_users_can_be_filtered_by_role(session_factory):
         assert await names("ADMIN") == {ADMIN_TG}
         assert await names("NONE") == {CLIENT_TG}
         assert await names("") == {ADMIN_TG, OTHER_TG, CLIENT_TG}
+
+
+async def test_user_timeline_lists_actions_not_received_notifications(session_factory):
+    from app.services import admin as admin_svc
+    from app.services import events as ev
+
+    async with dashboard(session_factory) as d:
+        client = await register(d, CLIENT_TG)
+        async with d.sf() as s:
+            await ev.log_event(s, ev.AUCTION_NOTIFICATION_SENT, user_id=client.id)
+            await ev.log_event(s, ev.AUCTION_OPENED, user_id=client.id)
+            await s.commit()
+            p = await admin_svc.user_profile(s, client.id)
+        types = [e.event_type for e in p.timeline]
+        assert ev.AUCTION_OPENED in types and ev.AUCTION_NOTIFICATION_SENT not in types
+        assert p.notifications == 1

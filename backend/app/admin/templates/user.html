@@ -69,7 +69,7 @@
 </div>
 {% if p.monitorings %}
 <div class="table-wrap" style="margin-top:10px"><table>
-  <thead><tr><th>Назва</th><th>Параметри</th><th>Відповідальні</th><th>Створено</th></tr></thead>
+  <thead><tr><th>Назва</th><th>Параметри</th><th>Відповідальні</th><th>Хто створив</th><th>Створено</th></tr></thead>
   <tbody>{% for m in p.monitorings %}
     <tr><td>{{ m.name }}</td>
       <td>{% for label, value in summary(m.params) %}<span class="muted">{{ label }}:</span> {{ value }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
@@ -91,6 +91,7 @@
           </select></form>
         {% elif not ws %}<span class="muted">—</span>{% endif %}
       </td>
+      <td>{{ creators.get(m.id, 'Користувач') }}</td>
       <td>{{ fmt_dt(m.created_at) }}</td></tr>
   {% endfor %}</tbody></table></div>
 <style>

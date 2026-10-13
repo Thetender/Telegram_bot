@@ -34,6 +34,32 @@ async def staff_users(session: AsyncSession) -> list[User]:
     )
 
 
+async def creators(session: AsyncSession, monitorings: list[Monitoring]) -> dict[int, str]:
+    """monitoring id → «Користувач» or «Адмін (Ім'я)» / «Менеджер (Ім'я)»."""
+    ids = {m.created_by for m in monitorings if m.created_by}
+    users = (
+        {u.id: u for u in await session.scalars(select(User).where(User.id.in_(ids)))}
+        if ids
+        else {}
+    )
+    roles: dict[int, set[str]] = {}
+    if ids:
+        for uid, role in await session.execute(
+            select(UserRole.user_id, UserRole.role).where(UserRole.user_id.in_(ids))
+        ):
+            roles.setdefault(uid, set()).add(role)
+    out = {}
+    for m in monitorings:
+        staff = users.get(m.created_by) if m.created_by else None
+        if staff is None:
+            out[m.id] = "Користувач"
+            continue
+        who = staff.name or (f"@{staff.username}" if staff.username else "без імені")
+        title = "Менеджер" if roles.get(staff.id) == {"MANAGER"} else "Адмін"
+        out[m.id] = f"{title} ({who})"
+    return out
+
+
 async def watchers_by_monitoring(
     session: AsyncSession, monitoring_ids: list[int]
 ) -> dict[int, list[User]]:

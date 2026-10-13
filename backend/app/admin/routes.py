@@ -419,6 +419,7 @@ def create_router() -> APIRouter:
                 session, [m.id for m in profile.monitorings]
             ),
             staff=await watchers_svc.staff_users(session),
+            creators=await watchers_svc.creators(session, profile.monitorings),
         )
 
     # ---------------- monitorings created/watched from the Dashboard ----------------
@@ -494,6 +495,7 @@ def create_router() -> APIRouter:
                 values,
                 ["The Tender не прийняв моніторинг, спробуйте ще раз за хвилину."],
             )
+        row.created_by = ctx.user.id
         for staff_id in raw.get("watchers", []):
             if staff_id.isdigit():
                 await watchers_svc.add(session, row, int(staff_id), ctx.user)

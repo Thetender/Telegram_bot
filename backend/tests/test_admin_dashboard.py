@@ -462,10 +462,7 @@ async def test_admin_creates_a_monitoring_for_a_client(session_factory):
         assert "msg=monitoring_created" in r.headers["location"]
         async with d.sf() as s:
             row = await s.scalar(select(Monitoring))
-            assert (
-                row.user_id == client.id
-                and row.name.startswith("Оренда · Київ, Львівська")
-            )
+            assert row.user_id == client.id and row.name.startswith("Оренда · Київ, Львівська")
             assert row.params["min_price"] == "100000"
             w = await s.scalar(select(MonitoringWatcher))
             assert w.user_id == manager.id
@@ -474,6 +471,7 @@ async def test_admin_creates_a_monitoring_for_a_client(session_factory):
 
         page = await d.client.get(f"/admin/users/{client.id}")
         assert "➕ Створити моніторинг" in page.text and 'class="chip"' in page.text
+        assert "Адмін (Іван Петренко)" in page.text
         r = await d.client.post(
             f"/admin/users/{client.id}/monitorings/{row.id}/watchers",
             data={"csrf": csrf, "staff_id": manager.id, "action": "remove"},

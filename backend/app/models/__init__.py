@@ -272,6 +272,8 @@ class Monitoring(Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Manager/admin who created it in the Dashboard; NULL = the client in the bot.
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
     updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())

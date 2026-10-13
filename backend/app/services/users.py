@@ -22,7 +22,7 @@ async def get_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | 
 async def register_user(
     session: AsyncSession,
     telegram_id: int,
-    phone: str,
+    phone: str | None,
     username: str | None,
     name: str | None,
 ) -> tuple[User, bool]:
@@ -50,7 +50,8 @@ async def register_user(
     assert user is not None
     if new_id is None:
         # Existing user shared the contact again: refresh contact data.
-        user.phone = phone
+        if phone:
+            user.phone = phone
         user.username = username
         user.name = name
         return user, False

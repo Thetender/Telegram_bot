@@ -106,8 +106,20 @@ async def notify_staff(
 
 
 async def show_consultation(
-    bot: Bot, chat_id: int, session: AsyncSession, settings: Settings, user: User
+    bot: Bot,
+    chat_id: int,
+    session: AsyncSession,
+    settings: Settings,
+    user: User,
+    state: FSMContext | None = None,
 ) -> None:
+    if not user.phone:
+        # A manager needs a number to call back: ask for it first, then continue here.
+        if state is not None:
+            from app.bot.phone import AFTER_CONSULTATION, ask_phone
+
+            await ask_phone(bot, state, user, AFTER_CONSULTATION)
+        return
     existing = await svc.get_open_request(session, user.id)
     if existing is not None:
         await bot.send_message(
@@ -221,7 +233,7 @@ def create_router() -> Router:
         message: Message, state: FSMContext, session: AsyncSession, settings: Settings, user: User
     ) -> None:
         await state.clear()
-        await show_consultation(message.bot, message.chat.id, session, settings, user)
+        await show_consultation(message.bot, message.chat.id, session, settings, user, state)
 
     @router.message(F.text == t.BTN_MY_REQUESTS, filters.is_manager)
     async def on_my_requests(
@@ -232,15 +244,29 @@ def create_router() -> Router:
 
     @router.callback_query(CCb.filter(F.a == "open"))
     async def on_open(
-        callback: CallbackQuery, session: AsyncSession, settings: Settings, user: User
+        callback: CallbackQuery,
+        session: AsyncSession,
+        settings: Settings,
+        user: User,
+        state: FSMContext,
     ) -> None:
         await callback.answer()
-        await show_consultation(callback.bot, callback.from_user.id, session, settings, user)
+        await show_consultation(callback.bot, callback.from_user.id, session, settings, user, state)
 
     @router.callback_query(CCb.filter(F.a == "req"))
     async def on_request(
-        callback: CallbackQuery, session: AsyncSession, settings: Settings, user: User
+        callback: CallbackQuery,
+        session: AsyncSession,
+        settings: Settings,
+        user: User,
+        state: FSMContext,
     ) -> None:
+        if not user.phone:
+            await callback.answer()
+            await show_consultation(
+                callback.bot, callback.from_user.id, session, settings, user, state
+            )
+            return
         req, created = await svc.create_request(session, user)
         phone = settings.consultation_phone
         if not created:

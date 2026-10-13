@@ -936,7 +936,7 @@ def create_router() -> APIRouter:
         """A version needs a public link OR an uploaded file; with only a file
         the bot links to its own public copy (/legal/<id>)."""
         auth.check_csrf(ctx, csrf)
-        if doc_type not in (legal.TERMS, legal.PRIVACY) or not version.strip():
+        if doc_type not in legal.ACTIVE_TYPES or not version.strip():
             raise HTTPException(400)
         public_url = public_url.strip()
         if public_url and not public_url.startswith("https://"):

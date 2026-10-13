@@ -21,6 +21,7 @@ from app.bot.callbacks import MCb
 from app.bot.handlers.results import RCb, send_results_page
 from app.bot.handlers.search import SCb, edit_or_send, render_edit_screen
 from app.bot.keyboards import HelpCb, main_menu
+from app.bot.phone import AFTER_MONITORING, ask_phone
 from app.config import Settings
 from app.integrations.thetender import TenderClient, TenderError
 from app.models import Monitoring, User
@@ -115,6 +116,24 @@ def _errors_text(exc: TenderError) -> str:
     return "\n".join(f"• {html.escape(e)}" for e in items)
 
 
+async def ask_monitoring_name(
+    bot: Bot, session: AsyncSession, state: FSMContext, user: User, snapshot_id: int
+) -> None:
+    snap = await search_svc.get_snapshot(session, snapshot_id, user.id)
+    if snap is None:
+        return
+    await state.set_state(MonitoringInput.name)
+    await state.set_data({"mode": "create", "snap": snap.id})
+    suggestion = svc.suggested_name(snap.params)
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [_b(t.BTN_USE_NAME.format(name=suggestion), a="usename", i=snap.id)],
+            [_b(t.BTN_CANCEL, a="noname")],
+        ]
+    )
+    await bot.send_message(user.telegram_id, t.MON_ASK_NAME, reply_markup=markup)
+
+
 def create_router() -> Router:
     router = Router(name="monitorings")
     router.message.filter(filters.registered)
@@ -158,17 +177,12 @@ def create_router() -> Router:
         if snap is None or snap.source != "SEARCH" or not is_effective(snap.params):
             await stale(callback)
             return
-        await state.set_state(MonitoringInput.name)
-        await state.set_data({"mode": "create", "snap": snap.id})
-        suggestion = svc.suggested_name(snap.params)
-        markup = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [_b(t.BTN_USE_NAME.format(name=suggestion), a="usename", i=snap.id)],
-                [_b(t.BTN_CANCEL, a="noname")],
-            ]
-        )
         await callback.answer()
-        await callback.bot.send_message(user.telegram_id, t.MON_ASK_NAME, reply_markup=markup)
+        if not user.phone:
+            # The phone is required for monitorings; the naming step follows the contact.
+            await ask_phone(callback.bot, state, user, AFTER_MONITORING, snap.id)
+            return
+        await ask_monitoring_name(callback.bot, session, state, user, snap.id)
 
     async def create_from_snapshot(
         bot: Bot,

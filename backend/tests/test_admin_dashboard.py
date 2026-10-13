@@ -349,8 +349,7 @@ async def test_legal_documents_publish_url_and_file(session_factory):
         from tests.fake_telegram import message_update
 
         await d.dp.feed_update(d.bot, message_update(77777, "/start"))
-        links = d.tg.sent()[0].reply_markup.inline_keyboard
-        assert links[0][0].url.startswith("https://thetender.com.ua/new-terms?utm_source=telegram")
+        assert 'href="https://thetender.com.ua/new-terms?utm_source=telegram' in d.tg.texts()[0]
 
 
 async def test_legal_version_with_only_a_file_gets_a_public_link(session_factory):
@@ -358,7 +357,7 @@ async def test_legal_version_with_only_a_file_gets_a_public_link(session_factory
         await register(d, ADMIN_TG, ROLE_ADMIN)
         await d.login(ADMIN_TG)
         csrf = await d.csrf()
-        form = {"csrf": csrf, "doc_type": "PRIVACY", "version": "2.0", "public_url": ""}
+        form = {"csrf": csrf, "doc_type": "TERMS", "version": "2.0", "public_url": ""}
         r = await d.client.post("/admin/settings/legal/publish", data=form)
         assert "msg=url_or_file" in r.headers["location"]
         r = await d.client.post(

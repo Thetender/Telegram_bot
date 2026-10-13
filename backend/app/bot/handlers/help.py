@@ -8,6 +8,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
@@ -149,6 +150,7 @@ def create_router() -> Router:
         user: User,
         settings: Settings,
         roles: set[str],
+        state: FSMContext,
     ) -> None:
         section = callback_data.section
         if section == "home":
@@ -174,7 +176,9 @@ def create_router() -> Router:
             from app.bot.handlers.consultation import show_consultation
 
             await callback.answer()
-            await show_consultation(callback.bot, callback.from_user.id, session, settings, user)
+            await show_consultation(
+                callback.bot, callback.from_user.id, session, settings, user, state
+            )
             return
         elif section == "settings":
             enabled = user.marketing_opt_out_at is None

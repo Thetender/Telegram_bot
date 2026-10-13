@@ -13,7 +13,12 @@ from app.services import events
 
 TERMS = "TERMS"
 PRIVACY = "PRIVACY"
-DOC_TITLES = {TERMS: "Умови використання", PRIVACY: "Політика конфіденційності"}
+DOC_TITLES = {
+    TERMS: "Правила користування та конфіденційність",
+    PRIVACY: "Політика конфіденційності (не використовується)",
+}
+# One combined document is in use; PRIVACY stays in the schema for history only.
+ACTIVE_TYPES = (TERMS,)
 
 
 @dataclass(frozen=True)
@@ -29,7 +34,7 @@ async def get_active_versions(session: AsyncSession) -> dict[str, ActiveLegalVer
     rows = await session.execute(
         select(LegalDocument.doc_type, LegalDocumentVersion)
         .join(LegalDocumentVersion, LegalDocumentVersion.document_id == LegalDocument.id)
-        .where(LegalDocumentVersion.status == "ACTIVE")
+        .where(LegalDocumentVersion.status == "ACTIVE", LegalDocument.doc_type.in_(ACTIVE_TYPES))
     )
     result: dict[str, ActiveLegalVersion] = {}
     for doc_type, v in rows:
@@ -54,6 +59,7 @@ async def pending_reacceptance(session: AsyncSession, user_id: int) -> list[Acti
         .join(LegalDocumentVersion, LegalDocumentVersion.document_id == LegalDocument.id)
         .where(
             LegalDocumentVersion.status == "ACTIVE",
+            LegalDocument.doc_type.in_(ACTIVE_TYPES),
             LegalDocumentVersion.require_reacceptance.is_(True),
             LegalDocumentVersion.id.not_in(accepted),
         )

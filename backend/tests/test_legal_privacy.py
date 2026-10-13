@@ -57,7 +57,7 @@ async def test_reacceptance_gate_blocks_interactive_functions_until_accepted(har
 
     await h.feed(message_update(UID, t.BTN_SEARCH))
     (gate,) = h.tg.sent()
-    assert gate.text.startswith("📄 <b>Ми оновили Умови використання</b>")
+    assert gate.text.startswith("📄 <b>Ми оновили Правила користування</b>")
     urls = [b.url for row in gate.reply_markup.inline_keyboard for b in row if b.url]
     assert [u.split("?")[0] for u in urls] == ["https://thetender.com.ua/terms-2.0"]
     assert "utm_campaign=menu" in urls[0]
@@ -100,14 +100,13 @@ async def test_new_users_accept_current_versions_at_registration(harness):
     assert t.SEARCH_TITLE in h.tg.texts()[-1]  # no gate
 
 
-async def test_gate_names_both_documents(harness):
+async def test_old_privacy_document_is_not_used(harness):
     h = harness
     await h.feed(contact_update(UID, contact_user_id=UID))
-    await publish(h.sf, "TERMS", "2.0", reaccept=True)
-    await publish(h.sf, "PRIVACY", "2.0", reaccept=True)
+    await publish(h.sf, "PRIVACY", "2.0", reaccept=True)  # legacy type: ignored
     h.tg.clear()
-    await h.feed(message_update(UID, "/start"))
-    assert "Умови використання та Політику конфіденційності" in h.tg.texts()[-1]
+    await h.feed(message_update(UID, t.BTN_SEARCH))
+    assert t.SEARCH_TITLE in h.tg.texts()[-1]  # no gate
 
 
 async def test_deletion_request_notifies_admins(session_factory):
@@ -175,9 +174,11 @@ async def test_remote_first_deletion_with_retry(session_factory):
         # The person is treated as a new visitor afterwards.
         d.tg.clear()
         await d.dp.feed_update(d.bot, message_update(CLIENT_TG, t.BTN_SEARCH))
-        assert t.REGISTRATION_REQUIRED in [
-            m.text for m in d.tg.requests if isinstance(m, SendMessage)
-        ]
+        assert any(
+            m.text.startswith("👋 Вітаємо в THE TENDER!")
+            for m in d.tg.requests
+            if isinstance(m, SendMessage)
+        )
 
 
 async def test_staff_must_lose_role_before_deletion(session_factory):

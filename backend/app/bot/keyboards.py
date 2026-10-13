@@ -26,6 +26,16 @@ class PrivacyCb(CallbackData, prefix="pd"):
     action: str  # send
 
 
+class BeginCb(CallbackData, prefix="go"):
+    pass
+
+
+def welcome() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=t.BTN_BEGIN, callback_data=BeginCb().pack())]]
+    )
+
+
 class LegalCb(CallbackData, prefix="lg"):
     action: str  # accept
 
@@ -47,7 +57,10 @@ def main_menu(roles: set[str]) -> ReplyKeyboardMarkup:
 
 def share_phone() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=t.BTN_SHARE_PHONE, request_contact=True)]],
+        keyboard=[
+            [KeyboardButton(text=t.BTN_SHARE_PHONE, request_contact=True)],
+            [KeyboardButton(text=t.BTN_CANCEL_PHONE)],
+        ],
         resize_keyboard=True,
         is_persistent=True,
         one_time_keyboard=False,

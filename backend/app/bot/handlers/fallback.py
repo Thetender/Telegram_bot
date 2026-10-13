@@ -19,7 +19,9 @@ def create_router() -> Router:
         message: Message, session: AsyncSession, user: User | None, roles: set[str]
     ) -> None:
         if user is None:
-            await message.answer(t.REGISTRATION_REQUIRED, reply_markup=kb.share_phone())
+            from app.bot.handlers.start import send_registration_screen
+
+            await send_registration_screen(message, session)
             return
         await message.answer(t.UNKNOWN_INPUT, reply_markup=kb.main_menu(roles))
 

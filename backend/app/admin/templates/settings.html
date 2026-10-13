@@ -96,7 +96,7 @@
   <h2>Юридичні документи</h2>
   <p class="muted">Кожна версія незмінна. Зміна лише посилання не створює нової версії. Нова версія автоматично стає активною, попередня — архівною.</p>
   <div class="grid2">
-  {% for doc_type, title in [('TERMS', 'Умови використання'), ('PRIVACY', 'Політика конфіденційності')] %}
+  {% for doc_type, title in [('TERMS', 'Правила користування та конфіденційність')] %}
     <div class="card">
       <div style="font-weight:600;margin-bottom:8px">{{ title }}</div>
       {% for v in legal_versions.get(doc_type, []) %}

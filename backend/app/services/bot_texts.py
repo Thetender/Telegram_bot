@@ -22,7 +22,6 @@ _QUESTION = re.compile(r"^\s*(\d{1,2})[.)]\s+(.+?)\s*$")
 # key → (title in the Dashboard, built-in default)
 EDITABLE: dict[str, tuple[str, str]] = {
     "HELP_FAQ": ("❓ FAQ", t.HELP_FAQ),
-    "HELP_ABOUT": ("ℹ️ Про Prozorro.Продажі", t.HELP_ABOUT),
     "HELP_TARIFFS": ("💳 Тарифи", t.HELP_TARIFFS),
 }
 

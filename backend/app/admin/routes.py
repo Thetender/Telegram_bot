@@ -748,6 +748,7 @@ def create_router() -> APIRouter:
             tabs=SETTINGS_TABS,
             bot_texts=await bot_texts.all_sections(session) if tab == "texts" else [],
             text_error=request.query_params.get("text_error", "")[:300],
+            text_key=request.query_params.get("sec", ""),
             text_preview=campaigns_svc.preview_html,
         )
 
@@ -892,7 +893,7 @@ def create_router() -> APIRouter:
             raise HTTPException(404)
         if action == "reset":
             await bot_texts.reset(session, key, ctx.user)
-            return redirect("/admin/settings", "saved", tab="texts")
+            return redirect("/admin/settings", "saved", tab="texts", sec=key)
         content = file_name = None
         if mode == bot_texts.DOC and file is not None and file.filename:
             content = await file.read(bot_texts.MAX_FILE + 1)
@@ -903,9 +904,9 @@ def create_router() -> APIRouter:
         if errors:
             await session.rollback()
             return RedirectResponse(
-                f"/admin/settings?tab=texts&text_error={quote(errors[0])}#t-{key}", 303
+                f"/admin/settings?tab=texts&sec={key}&text_error={quote(errors[0])}", 303
             )
-        return redirect("/admin/settings", "saved", tab="texts")
+        return redirect("/admin/settings", "saved", tab="texts", sec=key)
 
     @router.get("/settings/texts/{key}/file")
     async def bot_text_file(session: DB, ctx: Admin, key: str) -> Response:

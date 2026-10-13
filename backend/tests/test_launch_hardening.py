@@ -171,7 +171,9 @@ async def test_help_section_can_be_a_link_or_a_document(session_factory):
             files={"file": ("tariffs.pdf", b"%PDF-1.4 test", "application/pdf")},
         )
         assert "msg=saved" in r.headers["location"]
-        page = await d.client.get("/admin/settings", params={"tab": "texts"})
+        page = await d.client.get(
+            "/admin/settings", params={"tab": "texts", "sec": "HELP_TARIFFS"}
+        )
         assert "tariffs.pdf" in page.text
         got = await d.client.get(f"{url}/file")
         assert got.content == b"%PDF-1.4 test"

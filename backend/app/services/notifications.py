@@ -12,10 +12,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
-from app.models import NotificationDelivery
+from app.models import Monitoring, MonitoringWatcher, NotificationDelivery, User
 
 log = logging.getLogger(__name__)
 
@@ -97,14 +99,48 @@ async def ingest(session: AsyncSession, event: ParsedEvent) -> int:
             "canonical_auction_id": event.canonical_auction_id,
             "telegram_user_id": tg_id,
             "monitoring_name": name,
+            "for_user_id": 0,
             "auction": event.auction,
         }
         for tg_id, name in event.recipients
     ]
+    rows += await _watcher_copies(session, event)
     result = await session.execute(
         insert(NotificationDelivery)
         .values(rows)
-        .on_conflict_do_nothing(constraint="uq_delivery_auction_user")
+        .on_conflict_do_nothing(constraint="uq_delivery_auction_user_for")
         .returning(NotificationDelivery.id)
     )
     return len(result.all())
+
+
+async def _watcher_copies(session: AsyncSession, event: ParsedEvent) -> list[dict[str, Any]]:
+    """Copies for managers/admins responsible for the matched monitorings.
+    The webhook names the monitoring, so it is matched by (client, name)."""
+    wanted = {(tg_id, name) for tg_id, name in event.recipients if name}
+    if not wanted:
+        return []
+    client, watcher = aliased(User), aliased(User)
+    rows = await session.execute(
+        select(client.telegram_id, client.id, Monitoring.name, watcher.telegram_id)
+        .join(Monitoring, Monitoring.user_id == client.id)
+        .join(MonitoringWatcher, MonitoringWatcher.monitoring_id == Monitoring.id)
+        .join(watcher, watcher.id == MonitoringWatcher.user_id)
+        .where(
+            client.telegram_id.in_({tg for tg, _ in wanted}),
+            Monitoring.deleted_at.is_(None),
+        )
+    )
+    out = []
+    for client_tg, client_id, mon_name, watcher_tg in rows:
+        if (client_tg, mon_name) in wanted:
+            out.append(
+                {
+                    "canonical_auction_id": event.canonical_auction_id,
+                    "telegram_user_id": watcher_tg,
+                    "monitoring_name": mon_name,
+                    "for_user_id": client_id,
+                    "auction": event.auction,
+                }
+            )
+    return out

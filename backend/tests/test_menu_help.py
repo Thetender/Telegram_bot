@@ -72,7 +72,6 @@ async def test_help_sections(harness):
     labels = [[b.text for b in row] for row in markup.inline_keyboard]
     assert labels == [
         [t.BTN_FAQ, t.BTN_TARIFFS],
-        [t.BTN_ABOUT],
         [t.BTN_NOTIFICATION_SETTINGS],
         [t.BTN_DELETE_DATA],
         [t.BTN_MAIN_MENU],
@@ -82,7 +81,7 @@ async def test_help_sections(harness):
     await harness.feed(callback_update(UID, kb.HelpCb(section="home").pack()))
     assert harness.tg.texts() == [t.MAIN_MENU]
 
-    sections = [("faq", t.FAQ_TITLE), ("about", t.HELP_ABOUT), ("tariffs", t.HELP_TARIFFS)]
+    sections = [("faq", t.FAQ_TITLE), ("tariffs", t.HELP_TARIFFS)]
     for section, expected in sections:
         harness.tg.clear()
         await harness.feed(callback_update(UID, kb.HelpCb(section=section).pack()))

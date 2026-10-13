@@ -95,7 +95,6 @@ def help_menu(versions: dict[str, ActiveLegalVersion]) -> InlineKeyboardMarkup:
     # Compact: short labels two per row, long ones on their own row.
     rows = [
         [cb(t.BTN_FAQ, "faq"), cb(t.BTN_TARIFFS, "tariffs")],
-        [cb(t.BTN_ABOUT, "about")],
     ]
     if TERMS in versions:
         rows.append(

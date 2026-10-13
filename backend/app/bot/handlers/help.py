@@ -32,7 +32,6 @@ log = logging.getLogger(__name__)
 # Help section → editable text key (Dashboard → Налаштування → Тексти бота).
 STATIC_SECTIONS = {
     "faq": "HELP_FAQ",
-    "about": "HELP_ABOUT",
     "tariffs": "HELP_TARIFFS",
 }
 

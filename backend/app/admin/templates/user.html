@@ -63,16 +63,43 @@
     <p class="muted" style="margin-bottom:0">Користувач один раз отримає повідомлення «Доступ до бота обмежено» з телефоном компанії, далі бот на нього не реагує. Блокується і номер телефону — новий Telegram-акаунт з ним теж не отримає доступу.</p>
   {% endif %}
 </div>
+<div style="display:flex;align-items:center;gap:12px;margin-top:24px">
+  <h2 style="margin:0">Моніторинги</h2>
+  {% if not p.user.access_blocked_at %}<a class="btn small" href="/admin/users/{{ p.user.id }}/monitorings/new">➕ Створити моніторинг</a>{% endif %}
+</div>
 {% if p.monitorings %}
-<h2>Моніторинги</h2>
-<div class="table-wrap"><table>
-  <thead><tr><th>Назва</th><th>Параметри</th><th>Створено</th></tr></thead>
+<div class="table-wrap" style="margin-top:10px"><table>
+  <thead><tr><th>Назва</th><th>Параметри</th><th>Відповідальні</th><th>Створено</th></tr></thead>
   <tbody>{% for m in p.monitorings %}
     <tr><td>{{ m.name }}</td>
       <td>{% for label, value in summary(m.params) %}<span class="muted">{{ label }}:</span> {{ value }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="watchers">
+        {% set ws = watchers.get(m.id, []) %}
+        {% for w in ws %}
+          <form class="inline" method="post" action="/admin/users/{{ p.user.id }}/monitorings/{{ m.id }}/watchers">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="staff_id" value="{{ w.id }}"><input type="hidden" name="action" value="remove">
+            <span class="chip">{{ w.name or ('@' ~ w.username) }}<button type="submit" title="Прибрати" aria-label="Прибрати">×</button></span></form>
+        {% endfor %}
+        {% set ids = ws|map(attribute='id')|list %}
+        {% set free = staff|rejectattr('id', 'in', ids)|list %}
+        {% if free %}
+        <form class="inline" method="post" action="/admin/users/{{ p.user.id }}/monitorings/{{ m.id }}/watchers">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <select name="staff_id" onchange="this.form.submit()" class="small">
+            <option value="">➕ додати…</option>
+            {% for s in free %}<option value="{{ s.id }}">{{ s.name or ('@' ~ s.username) }}</option>{% endfor %}
+          </select></form>
+        {% elif not ws %}<span class="muted">—</span>{% endif %}
+      </td>
       <td>{{ fmt_dt(m.created_at) }}</td></tr>
   {% endfor %}</tbody></table></div>
-{% endif %}
+<style>
+.watchers{min-width:200px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;margin:0 4px 4px 0;border-radius:99px;background:#eef3ff;color:#1f4fd1;font-size:13px}
+.chip button{border:0;background:none;color:#667085;cursor:pointer;padding:0 4px;font-size:15px;line-height:1}
+.chip button:hover{color:#c0362c}
+</style>
+{% else %}<p class="muted">Моніторингів немає.</p>{% endif %}
 {% if p.consultations %}
 <h2>Консультації</h2>
 <div class="table-wrap"><table>

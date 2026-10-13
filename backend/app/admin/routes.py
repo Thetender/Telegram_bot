@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
@@ -22,6 +23,7 @@ from sqlalchemy.orm import undefer
 
 from app.admin import auth
 from app.bot.handlers import consultation as consult_ui
+from app.bot.texts import MON_CREATED_BY_STAFF
 from app.config import Settings
 from app.models import (
     ROLE_ADMIN,
@@ -30,6 +32,7 @@ from app.models import (
     Campaign,
     ConsultationRequest,
     LegalDocumentVersion,
+    Monitoring,
     User,
 )
 from app.services import access as access_svc
@@ -39,6 +42,7 @@ from app.services import campaigns as campaigns_svc
 from app.services import consultations as consult_svc
 from app.services import privacy as privacy_svc
 from app.services import users as users_svc
+from app.services import watchers as watchers_svc
 from app.services.search_params import summary_lines
 
 log = logging.getLogger(__name__)
@@ -98,6 +102,9 @@ DATA_DELETED_TEXT = (
     "Щоб знову скористатися сервісом, натисніть /start."
 )
 FLASH = {
+    "monitoring_created": ("ok", "Моніторинг створено ✅ Клієнт отримав повідомлення в боті."),
+    "watcher_added": ("ok", "Відповідального додано: він отримуватиме копії сповіщень."),
+    "watcher_removed": ("ok", "Відповідального прибрано."),
     "invited": ("ok", "Запрошення надіслано в бот. Роль стане активною після підтвердження."),
     "invite_pending": ("info", "Цьому користувачу вже надіслано запрошення."),
     "already_admin": ("info", "Користувач уже є адміністратором."),
@@ -408,7 +415,117 @@ def create_router() -> APIRouter:
             blocked_by=blocked_by,
             history_kinds=[(k, v[0]) for k, v in history_kinds().items()],
             history_kind=h if h in history_kinds() else "",
+            watchers=await watchers_svc.watchers_by_monitoring(
+                session, [m.id for m in profile.monitorings]
+            ),
+            staff=await watchers_svc.staff_users(session),
         )
+
+    # ---------------- monitorings created/watched from the Dashboard ----------------
+
+    async def _client(session: AsyncSession, user_id: int) -> User:
+        user = await session.get(User, user_id)
+        if user is None or user.anonymized_at is not None:
+            raise HTTPException(404)
+        return user
+
+    async def _monitoring_form(
+        request: Request,
+        session: AsyncSession,
+        ctx: auth.AdminContext,
+        client: User,
+        values: dict | None = None,
+        errors: list[str] | None = None,
+    ) -> Response:
+        try:
+            categories = await request.app.state.tender.get_categories()
+        except Exception:  # noqa: BLE001 - the form still works with a text field
+            categories = []
+        from app.services import search_params as sp
+
+        return render(
+            request,
+            "monitoring_new.html",
+            ctx,
+            "users",
+            client=client,
+            v=values or {},
+            errors=errors or [],
+            categories=categories,
+            regions=[(r, sp.region_label(r)) for r in sp.REGIONS],
+            auction_types=sp.AUCTION_TYPES,
+            price_types=sp.PRICE_TYPES,
+            area_units=sp.AREA_UNITS,
+            staff=await watchers_svc.staff_users(session),
+        )
+
+    @router.get("/users/{user_id}/monitorings/new", response_class=HTMLResponse)
+    async def monitoring_new(request: Request, session: DB, ctx: Admin, user_id: int) -> Response:
+        client = await _client(session, user_id)
+        return await _monitoring_form(request, session, ctx, client)
+
+    @router.post("/users/{user_id}/monitorings")
+    async def monitoring_create(
+        request: Request, session: DB, ctx: Admin, user_id: int
+    ) -> Response:
+        from app.integrations.thetender import TenderError
+        from app.services import monitorings as mon_svc
+
+        form = await request.form()
+        auth.check_csrf(ctx, str(form.get("csrf", "")))
+        client = await _client(session, user_id)
+        raw = {k: [str(x) for x in form.getlist(k)] for k in form.keys()}
+        params, errors = watchers_svc.params_from_form(raw)
+        name = " ".join(str(form.get("name", "")).split())[: mon_svc.MAX_NAME_LEN]
+        values = {k: (v if k in ("regions", "watchers") else v[0]) for k, v in raw.items()}
+        if errors:
+            return await _monitoring_form(request, session, ctx, client, values, errors)
+        name = name or mon_svc.suggested_name(params)
+        try:
+            row = await mon_svc.create(session, request.app.state.tender, client, name, params)
+        except TenderError as exc:
+            await session.rollback()
+            log.warning("Dashboard monitoring for user %s not created: %s", client.id, exc)
+            return await _monitoring_form(
+                request,
+                session,
+                ctx,
+                client,
+                values,
+                ["The Tender не прийняв моніторинг, спробуйте ще раз за хвилину."],
+            )
+        for staff_id in raw.get("watchers", []):
+            if staff_id.isdigit():
+                await watchers_svc.add(session, row, int(staff_id), ctx.user)
+        await session.commit()
+        # The client learns about it, otherwise notifications would come unexpectedly.
+        try:
+            await request.app.state.bot.send_message(
+                client.telegram_id, MON_CREATED_BY_STAFF.format(name=html.escape(row.name))
+            )
+        except TelegramAPIError as exc:
+            log.info("Client %s not told about monitoring %s: %s", client.id, row.id, exc)
+        return redirect_back(f"/admin/users/{client.id}", "monitoring_created")
+
+    @router.post("/users/{user_id}/monitorings/{monitoring_id}/watchers")
+    async def monitoring_watchers(
+        session: DB,
+        ctx: Admin,
+        user_id: int,
+        monitoring_id: int,
+        csrf: str = Form(""),
+        staff_id: int = Form(...),
+        action: str = Form("add"),
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        monitoring = await session.get(Monitoring, monitoring_id)
+        if monitoring is None or monitoring.user_id != user_id:
+            raise HTTPException(404)
+        if action == "remove":
+            await watchers_svc.remove(session, monitoring, staff_id, ctx.user)
+            return redirect_back(f"/admin/users/{user_id}", "watcher_removed")
+        await watchers_svc.add(session, monitoring, staff_id, ctx.user)
+        return redirect_back(f"/admin/users/{user_id}", "watcher_added")
 
     @router.post("/users/{user_id}/access")
     async def user_access(

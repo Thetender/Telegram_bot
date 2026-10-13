@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Новий моніторинг{% endblock %}
+{% block content %}
+<p><a href="/admin/users/{{ client.id }}">◀️ {{ client.name or 'Користувач' }}</a></p>
+<h1>🔔 Новий моніторинг для {{ client.name or 'клієнта' }}</h1>
+<p class="muted">Моніторинг створюється в The Tender від імені клієнта. Клієнт отримає повідомлення в боті та бачитиме його в «Моїх моніторингах».</p>
+{% if errors %}<div class="flash warn">{% for e in errors %}{{ e }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
+<form method="post" action="/admin/users/{{ client.id }}/monitorings" class="card mon-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="fl">Назва <span class="muted">(необов'язково — інакше з параметрів)</span>
+    <input name="name" maxlength="100" value="{{ v.get('name', '') }}" placeholder="Напр. Оренда · Київська"></label>
+
+  <div class="grid3">
+    <label class="fl">Продаж / Оренда
+      <select name="auction_type"><option value="">не важливо</option>
+        {% for k, label in auction_types.items() %}<option value="{{ k }}" {{ 'selected' if v.get('auction_type') == k }}>{{ label }}</option>{% endfor %}
+      </select></label>
+    <label class="fl">Тип аукціону
+      <select name="start_price_type"><option value="">не важливо</option>
+        {% for k, label in price_types.items() %}<option value="{{ k }}" {{ 'selected' if v.get('start_price_type') == k }}>{{ label }}</option>{% endfor %}
+      </select></label>
+    <label class="fl">Категорія
+      {% if categories %}
+      <select name="category"><option value="">не важливо</option>
+        {% for c in categories %}<option value="{{ c }}" {{ 'selected' if v.get('category') == c }}>{{ c }}</option>{% endfor %}
+      </select>
+      {% else %}<input name="category" value="{{ v.get('category', '') }}" placeholder="Назва категорії">{% endif %}
+    </label>
+  </div>
+
+  <div class="fl">Області <span class="muted">(можна кілька)</span></div>
+  <div class="regions">
+    {% for full, short in regions %}<label class="chk"><input type="checkbox" name="regions" value="{{ full }}" {{ 'checked' if full in v.get('regions', []) }}> {{ short }}</label>{% endfor %}
+  </div>
+
+  <div class="grid3">
+    <label class="fl">Місто<input name="city" maxlength="200" value="{{ v.get('city', '') }}"></label>
+    <label class="fl">Ключові слова<input name="keywords" maxlength="200" value="{{ v.get('keywords', '') }}"></label>
+    <label class="fl">Організатор<input name="customer_name" maxlength="200" value="{{ v.get('customer_name', '') }}"></label>
+  </div>
+  <div class="grid3">
+    <label class="fl">Ціна від, грн<input name="min_price" inputmode="decimal" value="{{ v.get('min_price', '') }}"></label>
+    <label class="fl">Ціна до, грн<input name="max_price" inputmode="decimal" value="{{ v.get('max_price', '') }}"></label>
+    <span></span>
+  </div>
+  <div class="grid3">
+    <label class="fl">Площа від<input name="min_area" inputmode="decimal" value="{{ v.get('min_area', '') }}"></label>
+    <label class="fl">Площа до<input name="max_area" inputmode="decimal" value="{{ v.get('max_area', '') }}"></label>
+    <label class="fl">Одиниця площі
+      <select name="area_unit">{% for k, label in area_units.items() %}<option value="{{ k }}" {{ 'selected' if v.get('area_unit') == k }}>{{ label }}</option>{% endfor %}</select></label>
+  </div>
+
+  {% if staff %}
+  <div class="fl">Відповідальні <span class="muted">(отримуватимуть копії сповіщень з даними клієнта)</span></div>
+  <div class="regions">
+    {% for s in staff %}<label class="chk"><input type="checkbox" name="watchers" value="{{ s.id }}" {{ 'checked' if (s.id|string) in v.get('watchers', []) }}> {{ s.name or ('@' ~ s.username) }}</label>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="row-actions"><button type="submit">Створити моніторинг</button>
+    <a class="btn secondary" href="/admin/users/{{ client.id }}">Скасувати</a></div>
+</form>
+<style>
+.mon-form{display:flex;flex-direction:column;gap:14px;max-width:900px}
+.fl{display:block;font-weight:600;font-size:13px;color:#344054}
+.fl input,.fl select{display:block;width:100%;margin-top:4px;font-weight:400}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.regions{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:4px 12px}
+.chk{font-size:14px;white-space:nowrap}
+@media (max-width:700px){.grid3{grid-template-columns:1fr}}
+</style>
+{% endblock %}

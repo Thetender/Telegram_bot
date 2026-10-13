@@ -38,6 +38,7 @@ from app.models import (
 )
 from app.services import alerts, events, links
 from app.services import campaigns as campaigns_svc
+from app.services import users as users_svc
 from app.services.links import tracked_url
 from app.services.search_params import format_number
 
@@ -87,6 +88,26 @@ def render(delivery: NotificationDelivery, user: User, settings: Settings) -> st
         link=html.escape(link, quote=True),
     )
     if not link:
+        text = text.rsplit("\n\n", 1)[0]
+    return text
+
+
+def render_for_watcher(delivery: NotificationDelivery, client: User) -> str:
+    """Copy for a responsible manager/admin: client contact data + direct lot link."""
+    a = delivery.auction or {}
+    price = a.get("price")
+    price_text = f"{format_number(price)} грн" if price not in (None, "") else "—"
+    url = str(a.get("url") or "")
+    text = t.MON_WATCHER_NOTIFICATION.format(
+        client=html.escape(client.name or "—"),
+        phone=html.escape(client.phone or "телефон не вказано"),
+        username=f" · @{html.escape(client.username)}" if client.username else "",
+        monitoring=html.escape(delivery.monitoring_name or "—"),
+        title=html.escape(str(a.get("name") or "Без назви")),
+        price=html.escape(price_text),
+        link=html.escape(url, quote=True),
+    )
+    if not url:
         text = text.rsplit("\n\n", 1)[0]
     return text
 
@@ -261,6 +282,13 @@ class DeliveryWorker:
                 skip_reason = "personal data deleted"
             elif user.access_blocked_at is not None:
                 skip_reason = "access blocked by admin"
+            client = None
+            if skip_reason is None and d.for_user_id:
+                client = await session.get(User, d.for_user_id)
+                if client is None or client.anonymized_at is not None:
+                    skip_reason = "client data deleted"
+                elif not await users_svc.get_roles(session, user.id):
+                    skip_reason = "watcher is no longer staff"
             if skip_reason:
                 d.status, d.last_error, d.locked_at = "SKIPPED", skip_reason, None
                 await session.commit()
@@ -270,7 +298,7 @@ class DeliveryWorker:
 
             await self._throttle(d.telegram_user_id)
             try:
-                text = render(d, user, self.settings)
+                text = render_for_watcher(d, client) if client else render(d, user, self.settings)
                 msg = await self.bot.send_message(d.telegram_user_id, text)
             except TelegramRetryAfter as exc:
                 d.status, d.locked_at = "PENDING", None
@@ -304,6 +332,9 @@ class DeliveryWorker:
             d.sent_at, d.message_id = datetime.now(UTC), msg.message_id
             if user.bot_blocked_at is not None:
                 user.bot_blocked_at = None
+            if client is not None:
+                await session.commit()
+                return False
             await events.log_event(
                 session,
                 events.AUCTION_NOTIFICATION_SENT,

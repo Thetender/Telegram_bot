@@ -431,3 +431,53 @@ async def test_user_timeline_lists_actions_not_received_notifications(session_fa
         types = [e.event_type for e in p.timeline]
         assert ev.AUCTION_OPENED in types and ev.AUCTION_NOTIFICATION_SENT not in types
         assert p.notifications == 1
+
+
+async def test_admin_creates_a_monitoring_for_a_client(session_factory):
+    from app.models import ROLE_MANAGER, Monitoring, MonitoringWatcher
+
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        manager = await register(d, OTHER_TG, ROLE_MANAGER)
+        client = await register(d, CLIENT_TG)
+        await d.login(ADMIN_TG)
+        csrf = await d.csrf()
+        page = await d.client.get(f"/admin/users/{client.id}/monitorings/new")
+        assert page.status_code == 200 and "Новий моніторинг" in page.text
+
+        url = f"/admin/users/{client.id}/monitorings"
+        r = await d.client.post(url, data={"csrf": csrf, "min_price": "abc"})
+        assert "введіть число" in r.text
+        d.tg.clear()
+        r = await d.client.post(
+            url,
+            data={
+                "csrf": csrf,
+                "auction_type": "rent",
+                "regions": ["Київ", "Львівська область"],
+                "min_price": "100 000",
+                "watchers": [str(manager.id)],
+            },
+        )
+        assert "msg=monitoring_created" in r.headers["location"]
+        async with d.sf() as s:
+            row = await s.scalar(select(Monitoring))
+            assert (
+                row.user_id == client.id
+                and row.name.startswith("Оренда · Київ, Львівська")
+            )
+            assert row.params["min_price"] == "100000"
+            w = await s.scalar(select(MonitoringWatcher))
+            assert w.user_id == manager.id
+        told = [m for m in d.tg.sent() if int(m.chat_id) == CLIENT_TG]
+        assert told and "Для вас створено моніторинг" in told[-1].text
+
+        page = await d.client.get(f"/admin/users/{client.id}")
+        assert "➕ Створити моніторинг" in page.text and 'class="chip"' in page.text
+        r = await d.client.post(
+            f"/admin/users/{client.id}/monitorings/{row.id}/watchers",
+            data={"csrf": csrf, "staff_id": manager.id, "action": "remove"},
+        )
+        assert "msg=watcher_removed" in r.headers["location"]
+        async with d.sf() as s:
+            assert await s.scalar(select(MonitoringWatcher)) is None

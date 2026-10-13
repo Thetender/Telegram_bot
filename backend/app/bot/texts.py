@@ -272,6 +272,21 @@ MON_NOTIFICATION = (
     '🔗 <a href="{link}">Посилання на аукціон</a>'
 )
 
+MON_WATCHER_NOTIFICATION = (
+    "👀 <b>Новий аукціон для клієнта</b>\n\n"
+    "Клієнт: <b>{client}</b>\n"
+    "📱 {phone}{username}\n"
+    "Моніторинг: <b>{monitoring}</b>\n\n"
+    "<b>{title}</b>\n\n"
+    "💰 Стартова ціна: {price}\n\n"
+    '🔗 <a href="{link}">Посилання на аукціон</a>'
+)
+MON_CREATED_BY_STAFF = (
+    "🔔 Для вас створено моніторинг «<b>{name}</b>».\n\n"
+    "Ви отримуватимете повідомлення про нові аукціони за його параметрами. "
+    "Змінити або видалити його можна в розділі «🔔 Мої моніторинги»."
+)
+
 # --- Consultations (Iteration 3) ---
 CONSULT_TITLE = "💬 <b>Консультація</b>"
 CONSULT_INTRO = (

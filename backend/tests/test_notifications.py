@@ -275,3 +275,40 @@ async def test_background_worker_in_app_lifespan_delivers(session_factory):
                 break
             await asyncio.sleep(0.1)
         assert status == "SENT"
+
+
+async def test_responsible_staff_get_a_copy_with_client_data(session_factory):
+    from app.models import ROLE_MANAGER
+    from app.services import monitorings as mon_svc
+    from app.services import users as users_svc
+    from app.services import watchers as watchers_svc
+
+    async with environment(session_factory) as env:
+        async with env.sf() as s:
+            client = await s.scalar(select(User).where(User.telegram_id == U1))
+            manager = await s.scalar(select(User).where(User.telegram_id == U2))
+            await users_svc.grant_role(s, manager, ROLE_MANAGER, actor_user_id=None)
+            row = await mon_svc.create(
+                s, env.app.state.tender, client, "Склади Київ", {"auction_type": "sale"}
+            )
+            assert await watchers_svc.add(s, row, manager.id, manager)
+            await s.commit()
+        assert (await env.post(event())).status_code == 200
+        assert await env.worker.run_once() == 2
+        (own,) = env.sends(U1)
+        assert own.text.startswith("🔔 <b>Новий аукціон</b>")
+        (copy,) = env.sends(U2)
+        assert copy.text.startswith("👀 <b>Новий аукціон для клієнта</b>")
+        assert "Склади Київ" in copy.text and "+380670007001" in copy.text
+        assert 'href="https://thetender.com.ua/auction/LSE001-UA-20261010-00001' in copy.text
+
+        # A retry of the same webhook adds nothing; a removed watcher gets nothing new.
+        await env.post(event())
+        assert await env.worker.run_once() == 0
+        async with env.sf() as s:
+            await watchers_svc.remove(s, row, manager.id, manager)
+            await s.commit()
+        env.tg.clear()
+        await env.post(event(number="LSE001-UA-20261010-00002"))
+        await env.worker.run_once()
+        assert env.sends(U2) == []

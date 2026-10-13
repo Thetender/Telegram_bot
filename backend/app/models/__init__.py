@@ -296,6 +296,24 @@ class MonitoringEditDraft(Base):
     updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
 
 
+class MonitoringWatcher(Base):
+    """A manager/admin responsible for a client's monitoring: gets a copy of
+    every notification with the client's contact data."""
+
+    __tablename__ = "monitoring_watchers"
+    __table_args__ = (UniqueConstraint("monitoring_id", "user_id", name="uq_monitoring_watcher"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    monitoring_id: Mapped[int] = mapped_column(
+        ForeignKey("monitorings.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 class NotificationDelivery(Base):
     """Durable queue of "new auction" messages from The Tender webhook.
 
@@ -305,7 +323,10 @@ class NotificationDelivery(Base):
     __tablename__ = "notification_deliveries"
     __table_args__ = (
         UniqueConstraint(
-            "canonical_auction_id", "telegram_user_id", name="uq_delivery_auction_user"
+            "canonical_auction_id",
+            "telegram_user_id",
+            "for_user_id",
+            name="uq_delivery_auction_user_for",
         ),
         CheckConstraint(
             "status IN ('PENDING','SENDING','SENT','FAILED','SKIPPED')", name="status_valid"
@@ -317,6 +338,9 @@ class NotificationDelivery(Base):
     canonical_auction_id: Mapped[str] = mapped_column(String(128), nullable=False)
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     monitoring_name: Mapped[str | None] = mapped_column(String(255))
+    # 0 = the client's own notification; otherwise a copy for a responsible
+    # manager/admin, and this is the client's users.id.
+    for_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
     auction: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="PENDING")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))

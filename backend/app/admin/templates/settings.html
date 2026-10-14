@@ -85,7 +85,7 @@
       <input type="text" id="bot-link" readonly value="{{ bot_link }}" style="min-width:260px" onclick="this.select()">
       <button type="button" class="secondary small" onclick="navigator.clipboard.writeText(document.getElementById('bot-invite-text').value);this.textContent='Скопійовано ✓'">Скопіювати повідомлення</button>
     </div>
-    <textarea id="bot-invite-text" readonly rows="3" style="width:100%;margin-top:8px">Вітаю! Щоб стати менеджером The Tender і отримувати заявки клієнтів у Telegram, відкрийте бот і зареєструйтеся (кнопка «Поділитися телефоном»): {{ bot_link }}</textarea>
+    <textarea id="bot-invite-text" readonly rows="3" style="width:100%;margin-top:8px">Вітаю! Щоб стати менеджером The Tender і отримувати заявки клієнтів у Telegram, відкрийте бот і зареєструйтеся (кнопка «Почати»): {{ bot_link }}</textarea>
   </div>
   {% endif %}
 </div>
@@ -180,8 +180,8 @@
         <span class="mode-only" data-for="link">Опис над кнопкою <span class="muted">(необов'язково)</span></span>
         <span class="mode-only" data-for="doc">Підпис до документа <span class="muted">(необов'язково, до 1000 символів)</span></span>
       </label>
-      <textarea id="v-{{ key }}" name="value" rows="{{ 16 if key == 'HELP_FAQ' else 10 }}">{{ sec.text }}</textarea>
-      <div class="muted small">Форматування: <code>&lt;b&gt;жирний&lt;/b&gt;</code>, <code>&lt;i&gt;курсив&lt;/i&gt;</code>, <code>&lt;a href="https://..."&gt;посилання&lt;/a&gt;</code>.
+      <textarea data-rich id="v-{{ key }}" name="value" rows="{{ 16 if key == 'HELP_FAQ' else 10 }}">{{ sec.text }}</textarea>
+      <div class="muted small">Виділіть текст і натисніть кнопку на панелі. Можна вставляти текст з Word чи Google Docs — жирний, курсив і посилання збережуться.
         <span class="mode-only" data-for="text">До 3500 символів{% if key == 'HELP_FAQ' %}; FAQ — до 30 000, кожна відповідь до 3500{% endif %}.</span></div>
 
       <div class="mode-only" data-for="link">

@@ -32,8 +32,8 @@
     <label class="filters" style="display:block">Назва (бачать лише адміністратори)<br>
       <input type="text" name="title" value="{{ c.title }}" maxlength="200" style="width:100%"></label>
     <label class="filters" style="display:block">Текст повідомлення<br>
-      <textarea name="message" rows="10" style="width:100%" placeholder="Вітаємо! ...">{{ c.message }}</textarea></label>
-    <p class="muted" style="margin:0">Форматування Telegram: <code>&lt;b&gt;жирний&lt;/b&gt;</code>, <code>&lt;i&gt;курсив&lt;/i&gt;</code>, <code>&lt;a href="https://..."&gt;посилання&lt;/a&gt;</code>. До 3500 символів.</p>
+      <textarea data-rich name="message" rows="10" style="width:100%" placeholder="Вітаємо! ...">{{ c.message }}</textarea></label>
+    <p class="muted" style="margin:0">Виділіть текст і натисніть кнопку на панелі (жирний, курсив, посилання). До 3500 символів.</p>
     <div class="filters" style="margin:0">
       <label>Текст кнопки (необов'язково)<input type="text" name="button_text" value="{{ c.button_text or '' }}" maxlength="64" placeholder="Переглянути аукціони"></label>
       <label style="flex:1">Посилання кнопки<input type="url" name="button_url" value="{{ c.button_url or '' }}" placeholder="https://thetender.com.ua/..."></label>

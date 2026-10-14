@@ -101,3 +101,13 @@ textarea { font: inherit; padding: 8px 10px; border: 1px solid #d0d5dd; border-r
 .tg-preview .spoiler { background: #c7cbd1; color: transparent; border-radius: 3px; }
 .tg-preview blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--brand); }
 button[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* Visual editor for Telegram texts (editor.js) */
+.rte { border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; overflow: hidden; }
+.rte-bar { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; border-bottom: 1px solid #eaecf0; background: #f9fafb; }
+.rte-btn { min-width: 32px; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: #344054; font-size: 14px; cursor: pointer; }
+.rte-btn:hover { background: #eef3ff; border-color: #c7d4f8; }
+.rte-btn.on { background: #1f4fd1; color: #fff; }
+.rte-area { padding: 10px 12px; font-size: 14px; line-height: 1.5; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 520px; overflow-y: auto; }
+.rte-area a { color: #1f4fd1; text-decoration: underline; }
+.rte textarea.rte-code { border: 0; border-radius: 0; width: 100%; font-family: ui-monospace, monospace; font-size: 13px; padding: 10px 12px; min-height: 12em; }

@@ -45,10 +45,16 @@ class RCb(CallbackData, prefix="r"):
     p: int = 0
 
 
+MAX_TITLE = 400  # some lots carry a whole description as the name
+
+
 def format_auction(auction: Auction, link: str, position: int) -> str:
     price = f"{format_number(auction.price)} грн" if auction.price not in (None, "") else "—"
+    name = " ".join((auction.name or "").split())
+    if len(name) > MAX_TITLE:
+        name = name[: MAX_TITLE - 1].rstrip() + "…"
     return (
-        f"<b>{position}. {html.escape(auction.name)}</b>\n"
+        f"<b>{position}. {html.escape(name)}</b>\n"
         f"{t.RESULT_PRICE.format(price=price)}\n"
         f'<a href="{html.escape(link, quote=True)}">{t.RESULT_LINK}</a>'
     )

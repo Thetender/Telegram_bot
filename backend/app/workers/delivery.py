@@ -64,6 +64,11 @@ def backoff(attempts: int) -> timedelta:
     return timedelta(seconds=min(30 * 2 ** max(attempts - 1, 0), 3600))
 
 
+def _title(a: dict) -> str:
+    name = " ".join(str(a.get("name") or "Без назви").split())
+    return name if len(name) <= 1500 else name[:1499].rstrip() + "…"
+
+
 def render(delivery: NotificationDelivery, user: User, settings: Settings) -> str:
     a = delivery.auction or {}
     price = a.get("price")
@@ -83,7 +88,7 @@ def render(delivery: NotificationDelivery, user: User, settings: Settings) -> st
     )
     text = t.MON_NOTIFICATION.format(
         monitoring=html.escape(delivery.monitoring_name or "—"),
-        title=html.escape(str(a.get("name") or "Без назви")),
+        title=html.escape(_title(a)),
         price=html.escape(price_text),
         link=html.escape(link, quote=True),
     )
@@ -103,7 +108,7 @@ def render_for_watcher(delivery: NotificationDelivery, client: User) -> str:
         phone=html.escape(client.phone or "телефон не вказано"),
         username=f" · @{html.escape(client.username)}" if client.username else "",
         monitoring=html.escape(delivery.monitoring_name or "—"),
-        title=html.escape(str(a.get("name") or "Без назви")),
+        title=html.escape(_title(a)),
         price=html.escape(price_text),
         link=html.escape(url, quote=True),
     )

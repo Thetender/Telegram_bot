@@ -348,3 +348,38 @@ async def test_buttons_survive_a_rejected_results_message(harness):
     await tap(h, "run")
     assert h.tg.texts()[-1] == t.RESULTS_ACTIONS
     assert any(text == t.BTN_NEW_SEARCH for text, _ in buttons(last_markup(h)))
+
+
+def test_very_long_lot_name_is_shortened():
+    from app.bot.handlers.results import MAX_TITLE, format_auction, visible_len
+    from app.integrations.thetender import Auction
+
+    a = Auction(name="Опис " * 2000, number="X", url="https://thetender.com.ua/a", price=1)
+    block = format_auction(a, "https://tg.example.com/r/x", 1)
+    assert visible_len(block) < MAX_TITLE + 100 and "…" in block
+
+
+async def test_connect_errors_are_retried_without_duplicates():
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.methods import GetMe
+
+    from app.bot.factory import RetryConnectErrors
+
+    calls = []
+
+    async def flaky(bot, method):
+        calls.append(1)
+        if len(calls) < 3:
+            raise TelegramNetworkError(method=method, message="Cannot connect to host x")
+        return "ok"
+
+    mw = RetryConnectErrors(delay=0)
+    assert await mw(flaky, None, GetMe()) == "ok" and len(calls) == 3
+
+    async def timeout(bot, method):
+        raise TelegramNetworkError(method=method, message="Request timeout error")
+
+    import pytest
+
+    with pytest.raises(TelegramNetworkError):  # may have reached Telegram: no retry
+        await mw(timeout, None, GetMe())

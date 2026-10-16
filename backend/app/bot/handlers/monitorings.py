@@ -19,7 +19,7 @@ from app.bot import filters
 from app.bot import texts as t
 from app.bot.callbacks import MCb
 from app.bot.handlers.results import RCb, send_results_page
-from app.bot.handlers.search import SCb, edit_or_send, render_edit_screen
+from app.bot.handlers.search import SCb, edit_or_send, render_edit_screen, render_screen
 from app.bot.keyboards import HelpCb, main_menu
 from app.bot.phone import AFTER_MONITORING, ask_phone
 from app.config import Settings
@@ -128,7 +128,7 @@ async def ask_monitoring_name(
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [_b(t.BTN_USE_NAME.format(name=suggestion), a="usename", i=snap.id)],
-            [_b(t.BTN_CANCEL, a="noname")],
+            [_b(t.BTN_BACK_TO_SEARCH, a="noname")],
         ]
     )
     await bot.send_message(user.telegram_id, t.MON_ASK_NAME, reply_markup=markup)
@@ -264,7 +264,9 @@ def create_router() -> Router:
                     ),
                 )
                 return
-        await edit_or_send(callback, t.MON_CREATE_CANCELLED, None)
+        # Back to the search screen: the search parameters are still there.
+        params = await search_svc.get_draft(session, user.id)
+        await edit_or_send(callback, *render_screen(params))
 
     @router.message(MonitoringInput.name, F.text)
     async def on_name(
@@ -381,7 +383,7 @@ def create_router() -> Router:
             return
         await state.set_state(MonitoringInput.name)
         await state.set_data({"mode": "rename"})
-        markup = InlineKeyboardMarkup(inline_keyboard=[[_b(t.BTN_CANCEL, a="noname")]])
+        markup = InlineKeyboardMarkup(inline_keyboard=[[_b(t.BTN_BACK_TO_EDIT, a="noname")]])
         await edit_or_send(callback, t.MON_ASK_RENAME.format(name=html.escape(draft.name)), markup)
         await callback.answer()
 

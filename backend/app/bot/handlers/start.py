@@ -120,10 +120,23 @@ def create_router() -> Router:
                 pass
         await callback.bot.send_message(sender.id, t.MAIN_MENU, reply_markup=kb.main_menu(roles))
 
-    @router.message(F.text == t.BTN_CANCEL_PHONE)
-    async def on_cancel_phone(message: Message, state: FSMContext, roles: set[str]) -> None:
+    @router.message(F.text.in_({t.BTN_CANCEL_PHONE, t.BTN_BACK_TO_SEARCH_PHONE}))
+    async def on_cancel_phone(
+        message: Message,
+        state: FSMContext,
+        roles: set[str],
+        session: AsyncSession,
+        user: User | None,
+    ) -> None:
+        """Back from the phone request: to the search (monitoring) or the menu."""
         await state.clear()
         await message.answer(t.MAIN_MENU, reply_markup=kb.main_menu(roles))
+        if message.text == t.BTN_BACK_TO_SEARCH_PHONE and user is not None:
+            from app.bot.handlers.search import render_screen
+            from app.services import search as search_svc
+
+            text, markup = render_screen(await search_svc.get_draft(session, user.id))
+            await message.answer(text, reply_markup=markup)
 
     @router.message(F.contact)
     async def on_contact(

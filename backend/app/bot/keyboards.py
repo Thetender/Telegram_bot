@@ -55,11 +55,11 @@ def main_menu(roles: set[str]) -> ReplyKeyboardMarkup:
     )
 
 
-def share_phone() -> ReplyKeyboardMarkup:
+def share_phone(back: str | None = None) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=t.BTN_SHARE_PHONE, request_contact=True)],
-            [KeyboardButton(text=t.BTN_CANCEL_PHONE)],
+            [KeyboardButton(text=back or t.BTN_CANCEL_PHONE)],
         ],
         resize_keyboard=True,
         is_persistent=True,

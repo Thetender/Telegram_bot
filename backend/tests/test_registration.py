@@ -139,7 +139,10 @@ async def test_phone_is_asked_for_the_first_monitoring_and_consultation(harness,
     await h.feed(callback_update(UID, RCb(a="mon", s=snap.id).pack()))
     assert h.tg.texts() == [t.PHONE_FOR_MONITORING]
     share = h.tg.sent()[-1].reply_markup
-    assert share.keyboard[0][0].request_contact and share.keyboard[1][0].text == t.BTN_CANCEL_PHONE
+    assert (
+        share.keyboard[0][0].request_contact
+        and share.keyboard[1][0].text == t.BTN_BACK_TO_SEARCH_PHONE
+    )
     h.tg.clear()
     await h.feed(contact_update(UID, contact_user_id=UID, phone="380671234567"))
     assert h.tg.texts() == [t.PHONE_SAVED, t.MON_ASK_NAME]

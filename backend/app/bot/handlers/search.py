@@ -257,7 +257,7 @@ def input_keyboard(
     if skip:
         rows.append([_btn(t.BTN_SKIP, "skip", d=d)])
     bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", clear_target, d=d)] if clear_target else []
-    bottom.append(_btn(t.BTN_CANCEL, "cancel", d=d))
+    bottom.append(_btn(t.BTN_BACK_TO_PARAMS, "cancel", d=d))
     rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -265,7 +265,7 @@ def input_keyboard(
 def range_keyboard(
     step: str, unit: str = "", d: str = "", clear: bool = False
 ) -> InlineKeyboardMarkup:
-    """Price/area input: «Пропустити» + a step back instead of «Скасувати».
+    """Price/area input: «Пропустити» + a step back.
     step: price_min | price_max | area_min | area_max."""
     back = {
         "price_min": _btn(t.BTN_BACK_TO_PARAMS, "grid", d=d),

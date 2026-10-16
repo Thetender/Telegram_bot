@@ -306,3 +306,15 @@ async def test_history_shows_what_was_searched_and_changed(harness):
     assert by_label["Створив моніторинг"].details == ["«Продаж»", "Продаж"]
     assert by_label["Змінив моніторинг"].changes == [["Продаж / Оренда", "Продаж", "Оренда"]]
     assert {r.label for r in only_monitors.history} == {"Створив моніторинг", "Змінив моніторинг"}
+
+
+async def test_back_from_naming_returns_to_search_with_params(harness):
+    h = harness
+    await register(h)
+    snap = await run_search(h, auction_type="sale")
+    await h.feed(callback_update(UID, RCb(a="mon", s=snap.id).pack()))
+    assert (t.BTN_BACK_TO_SEARCH, MCb(a="noname").pack()) in buttons(last_markup(h))
+    await mtap(h, "noname")
+    assert "• Продаж / Оренда: Продаж" in h.tg.texts()[-1]
+    assert t.BTN_RUN_SEARCH in [b for b, _ in buttons(last_markup(h))]
+    assert await local(h) == []

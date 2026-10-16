@@ -37,6 +37,25 @@ log = logging.getLogger(__name__)
 THETENDER_WEBHOOK_PATH = "/thetender/webhook"
 
 
+async def register_tender_webhook(tender, settings: Settings) -> None:
+    """The Tender sends Telegram «new_auction» events only to an address set via
+    POST /rest/set_webhook, so the bot sets its own on every start. A failure
+    never stops the bot: it is logged and the admins are alerted."""
+    if not settings.public_base_url or not settings.thetender_api_key:
+        return
+    address = settings.public_base_url.rstrip("/") + THETENDER_WEBHOOK_PATH
+    try:
+        await tender.set_webhook(address)
+        log.info("The Tender webhook set to %s", address)
+    except Exception as exc:  # noqa: BLE001
+        log.error("The Tender webhook was not set (%s): %s", address, exc)
+        alerts.alert(
+            "tender_set_webhook",
+            "Не вдалося передати The Tender адресу для сповіщень про нові аукціони. "
+            "Поки її не задано, сповіщення моніторингів не надходитимуть.",
+        )
+
+
 def create_app(
     settings: Settings | None = None,
     bot: Bot | None = None,
@@ -71,6 +90,7 @@ def create_app(
             )
             await configure_bot(app.state.bot)
             log.info("Telegram webhook set to %s", url)
+        await register_tender_webhook(app.state.tender, settings)
         try:
             yield
         finally:

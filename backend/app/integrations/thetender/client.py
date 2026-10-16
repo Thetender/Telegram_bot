@@ -149,6 +149,8 @@ class TenderClient(Protocol):
 
     async def delete_monitoring(self, monitoring_id: str) -> None: ...
 
+    async def set_webhook(self, address: str) -> None: ...
+
     async def aclose(self) -> None: ...
 
 
@@ -331,6 +333,10 @@ class HttpTenderClient:
         )
         if isinstance(payload, dict) and payload.get("deleted") is False:
             raise TenderError("validation", "not deleted")
+
+    async def set_webhook(self, address: str) -> None:
+        """Tell The Tender where to send «new_auction» (API doc §6). Idempotent."""
+        await self._request("POST", "/rest/set_webhook", json={"address": address})
 
     async def aclose(self) -> None:
         if self._client is not None:

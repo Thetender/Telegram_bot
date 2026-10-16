@@ -312,3 +312,9 @@ async def test_responsible_staff_get_a_copy_with_client_data(session_factory):
         await env.post(event(number="LSE001-UA-20261010-00002"))
         await env.worker.run_once()
         assert env.sends(U2) == []
+
+
+async def test_bot_registers_its_tender_webhook_on_start(session_factory):
+    async with environment(session_factory) as env:
+        calls = [c for c in env.app.state.tender.calls if c[0] == "set_webhook"]
+        assert calls == [("set_webhook", {"address": "https://tg.example.com/thetender/webhook"})]

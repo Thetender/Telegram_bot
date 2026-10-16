@@ -152,6 +152,9 @@ class MockTenderClient:
         if self._ensure_store().pop(monitoring_id, None) is None:
             raise TenderError("not_found")
 
+    async def set_webhook(self, address: str) -> None:
+        self.calls.append(("set_webhook", {"address": address}))
+
     @staticmethod
     def _stored(monitoring_id: str, user_id: str, name: str, body: dict) -> dict:
         monitoring = {"name": name, **body}

@@ -29,6 +29,17 @@ class TenderError(Exception):
         self.errors = errors or []
 
 
+def balance_holder_text(value: Any) -> str | None:
+    """{"name": ..., "edrpou": ...} (or null) → «Назва (ЄДРПОУ 00034022)»."""
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name") or "").strip()
+    code = str(value.get("edrpou") or "").strip()
+    if name and code:
+        return f"{name} (ЄДРПОУ {code})"
+    return name or (f"ЄДРПОУ {code}" if code else None)
+
+
 @dataclass(frozen=True)
 class ExternalMonitoring:
     """A monitoring as stored by The Tender."""
@@ -87,6 +98,7 @@ class Auction:
     status: str | None = None
     start_price_type: str | None = None
     auction_type: str | None = None
+    balance_holder: str | None = None  # «Назва (ЄДРПОУ)» or None
 
     @classmethod
     def from_api(cls, d: dict[str, Any]) -> Auction:
@@ -100,6 +112,7 @@ class Auction:
             status=d.get("status"),
             start_price_type=d.get("start_price_type"),
             auction_type=d.get("auction_type"),
+            balance_holder=balance_holder_text(d.get("balance_holder")),
         )
 
 

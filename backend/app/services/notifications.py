@@ -31,6 +31,7 @@ AUCTION_FIELDS = (
     "auction_type",
     "price",
     "url",
+    "balance_holder",
 )
 
 

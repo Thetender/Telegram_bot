@@ -439,7 +439,9 @@ def create_router() -> APIRouter:
         errors: list[str] | None = None,
     ) -> Response:
         try:
-            categories = await request.app.state.tender.get_categories()
+            from app.bot.handlers.search import sort_categories
+
+            categories = sort_categories(await request.app.state.tender.get_categories())
         except Exception:  # noqa: BLE001 - the form still works with a text field
             categories = []
         from app.services import search_params as sp

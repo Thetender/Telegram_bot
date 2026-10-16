@@ -59,7 +59,7 @@ async def test_open_search_screen_and_resume_draft(harness):
     # After a choice: summary with values as text + 4 buttons.
     assert "• Продаж / Оренда: Оренда" in h.tg.texts()[-1]
     # One screen: all parameters (✅ chosen) + Search / Clear / Main menu.
-    assert "✅ Продаж / Оренда" in labels(h) and t.BTN_P_PRICE in labels(h)
+    assert f"✅ {t.BTN_P_DEAL}" in labels(h) and t.BTN_P_PRICE in labels(h)
     assert labels(h)[-3:] == [t.BTN_RUN_SEARCH, t.BTN_CLEAR_PARAMS, t.BTN_MAIN_MENU]
     assert t.BTN_EDIT_PARAMS not in labels(h)
     # Leave and come back: draft is resumed.
@@ -281,7 +281,7 @@ async def test_change_params_opens_grid_directly(harness):
     snap = await run_search(h, auction_type="sale")
     h.tg.clear()
     await h.feed(callback_update(UID, RCb(a="edit", s=snap.id).pack()))
-    assert "✅ Продаж / Оренда" in labels(h) and t.BTN_RUN_SEARCH in labels(h)
+    assert f"✅ {t.BTN_P_DEAL}" in labels(h) and t.BTN_RUN_SEARCH in labels(h)
 
 
 async def test_new_search_without_unsaved_changes_clears_immediately(harness):
@@ -383,3 +383,58 @@ async def test_connect_errors_are_retried_without_duplicates():
 
     with pytest.raises(TelegramNetworkError):  # may have reached Telegram: no retry
         await mw(timeout, None, GetMe())
+
+
+def test_search_grid_order_and_category_order():
+    from app.bot.handlers.search import _param_rows, sort_categories
+
+    rows = [[b.text for b in row] for row in _param_rows({}, "")]
+    assert rows == [
+        [t.BTN_P_CATEGORY, t.BTN_P_DEAL],
+        [t.BTN_P_REGION, t.BTN_P_CITY],
+        [t.BTN_P_KEYWORDS, t.BTN_P_TYPE],
+        [t.BTN_P_ORGANIZER, t.BTN_P_BALANCE],
+        [t.BTN_P_PRICE, t.BTN_P_AREA],
+    ]
+    api = ["Інше", "Надра", "Оренда державного майна", "Нерухомість", "Мала Приватизація"]
+    assert sort_categories(api) == [
+        "Нерухомість", "Оренда державного майна", "Мала Приватизація", "Надра", "Інше"
+    ]  # fmt: skip
+
+
+async def test_price_steps_have_back_buttons_and_warning(harness):
+    h = harness
+    await register(h)
+    await tap(h, "price")
+    assert "⚠️ <b>Важливо!</b> Стартова ціна" in h.tg.texts()[-1]
+    assert (t.BTN_BACK_TO_PARAMS, SCb(a="grid").pack()) in buttons(last_markup(h))
+    await tap(h, "skip")
+    assert (t.BTN_BACK_TO_MIN_PRICE, SCb(a="price").pack()) in buttons(last_markup(h))
+    await tap(h, "price")  # back to «від»
+    assert "<b>мінімальну</b>" in h.tg.texts()[-1]
+
+    await tap(h, "area")
+    assert (t.BTN_BACK_TO_PARAMS, SCb(a="grid").pack()) in buttons(last_markup(h))
+    await tap(h, "unit", "ha.")
+    assert "Площа може бути відсутня" in h.tg.texts()[-1]
+    assert (t.BTN_BACK_TO_UNIT, SCb(a="area").pack()) in buttons(last_markup(h))
+    await say(h, "5")
+    assert (t.BTN_BACK_TO_MIN_AREA, SCb(a="unit", v="ha.").pack()) in buttons(last_markup(h))
+
+
+async def test_balance_holder_is_searched_and_hinted(harness):
+    h = harness
+    await register(h)
+    await tap(h, "txt", "balance_holder")
+    assert h.tg.texts()[-1] == t.PROMPT_BALANCE_HOLDER
+    await say(h, "міністерство оборони")
+    assert "• Балансоутримувач: міністерство оборони" in h.tg.texts()[-1]
+    assert t.BALANCE_HOLDER_HINT not in h.tg.texts()[-1]
+    await tap(
+        h,
+        "catset",
+        __import__("app.bot.handlers.search", fromlist=["x"]).category_key("Нерухомість"),
+    )
+    assert t.BALANCE_HOLDER_HINT in h.tg.texts()[-1]
+    await tap(h, "run")
+    assert h.tender.calls[-1][1]["balance_holder"] == "міністерство оборони"

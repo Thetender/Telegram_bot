@@ -48,7 +48,8 @@ def test_monitoring_body_is_full_replacement_and_readback_parses():
     assert body["city"] is None and body["min_price"] is None  # cleared fields sent as null
     assert set(body) == {
         "auction_type", "start_price_type", "category", "region", "city", "keywords",
-        "customer_name", "min_price", "max_price", "area_unit", "min_area", "max_area",
+        "customer_name", "balance_holder", "min_price", "max_price", "area_unit",
+        "min_area", "max_area",
     }  # fmt: skip
     back = from_api(
         {

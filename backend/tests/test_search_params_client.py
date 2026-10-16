@@ -248,3 +248,25 @@ async def test_client_monitoring_crud_contract():
         assert exc.kind == "ambiguous"
     assert len(seen) - before == 1  # a non-idempotent create is never retried
     await c.aclose()
+
+
+def test_balance_holder_round_trip():
+    from app.integrations.thetender.client import Auction
+    from app.services.search_params import from_api, summary_lines, to_api, to_monitoring_body
+
+    params = {"auction_type": "rent", "balance_holder": "міністерство оборони"}
+    assert to_api(params)["balance_holder"] == "міністерство оборони"
+    body = to_monitoring_body({"auction_type": "rent"})
+    assert "balance_holder" in body and body["balance_holder"] is None  # update clears it
+    assert to_monitoring_body(params)["balance_holder"] == "міністерство оборони"
+    back = from_api({"name": "x", "auction_type": "rent", "balance_holder": "00034022"})
+    assert back == {"auction_type": "rent", "balance_holder": "00034022"}
+    assert ("Балансоутримувач", "00034022") in summary_lines(back)
+    a = Auction.from_api(
+        {
+            "name": "Лот",
+            "balance_holder": {"name": "Міністерство оборони України", "edrpou": "00034022"},
+        }
+    )
+    assert a.balance_holder == "Міністерство оборони України (ЄДРПОУ 00034022)"
+    assert Auction.from_api({"name": "Лот", "balance_holder": None}).balance_holder is None

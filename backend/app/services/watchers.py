@@ -124,7 +124,7 @@ def params_from_form(form: dict[str, list[str]]) -> tuple[dict, list[str]]:
     params["regions"] = [r for r in form.get("regions", []) if r in REGIONS]
     for key in TEXT_FIELDS:
         if first.get(key):
-            params[key] = first[key][:200]
+            params[key] = first[key][: 255 if key == "balance_holder" else 200]
     labels = {
         "min_price": "Ціна від",
         "max_price": "Ціна до",

@@ -53,7 +53,10 @@ AUCTION_TYPES = {"sale": "Продаж", "rent": "Оренда"}
 PRICE_TYPES = {"eng": "Англійський", "hol": "Голландський"}
 AREA_UNITS = {"ha.": "га", "sq.m.": "м²"}
 
-TEXT_FIELDS = ("city", "keywords", "customer_name")
+TEXT_FIELDS = ("city", "keywords", "customer_name", "balance_holder")
+# Балансоутримувач: ЄДРПОУ or name words; only rent of state property and
+# small/large privatization have it (API update 2026-10).
+MAX_BALANCE_HOLDER_LEN = 255
 NUMBER_FIELDS = ("min_price", "max_price", "min_area", "max_area")
 MAX_TEXT_LEN = 200
 MAX_NUMBER = Decimal("1000000000000")
@@ -67,6 +70,7 @@ API_FIELDS = (
     "city",
     "keywords",
     "customer_name",
+    "balance_holder",
     "min_price",
     "max_price",
     "area_unit",
@@ -211,6 +215,8 @@ def summary_lines(params: dict[str, Any] | None) -> list[tuple[str, str]]:
         lines.append(("Ключові слова", p["keywords"]))
     if "customer_name" in p:
         lines.append(("Організатор", p["customer_name"]))
+    if "balance_holder" in p:
+        lines.append(("Балансоутримувач", p["balance_holder"]))
     if "min_price" in p or "max_price" in p:
         lines.append(("Ціна", _range(p.get("min_price"), p.get("max_price"), "грн")))
     if "area_unit" in p:

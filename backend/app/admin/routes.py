@@ -455,7 +455,10 @@ def create_router() -> APIRouter:
             v=values or {},
             errors=errors or [],
             categories=categories,
-            regions=[(r, sp.region_label(r)) for r in sp.REGIONS],
+            regions=[
+                (r, sp.region_label(r))
+                for _, r in sp.selectable_regions((values or {}).get("regions", []))
+            ],
             auction_types=sp.AUCTION_TYPES,
             price_types=sp.PRICE_TYPES,
             area_units=sp.AREA_UNITS,

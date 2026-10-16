@@ -49,7 +49,7 @@ async def test_feedback_flow_with_admin_reply_and_follow_up(session_factory):
         await d.login(ADMIN_TG)
         csrf = await d.csrf()
         page = await d.client.get("/admin/feedback")
-        assert "Не знаходить" in page.text and "Робота з клієнтами" in page.text
+        assert "Не знаходить" in page.text and "📨 Звернення" in page.text
         page = await d.client.get(f"/admin/feedback/{fb.id}")
         assert "Листування" in page.text
         d.tg.clear()

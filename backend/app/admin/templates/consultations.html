@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Консультації{% endblock %}
 {% block content %}
-<h1>🤝 Робота з клієнтами</h1>
+<h1>📨 Звернення</h1>
 {% set clients_tab = 'consult' %}{% include "_clients_tabs.html" %}
 <div class="tabs">
   {% for key, label in [('all','Усі'),('new','Нові'),('progress','В роботі'),('done','Завершені')] %}

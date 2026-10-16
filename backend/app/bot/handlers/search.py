@@ -57,7 +57,9 @@ TEXT_PROMPTS = {
     "city": t.PROMPT_CITY,
     "keywords": t.PROMPT_KEYWORDS,
     "customer_name": t.PROMPT_ORGANIZER,
+    "balance_holder": t.PROMPT_BALANCE_HOLDER,
 }
+TEXT_LIMITS = {"balance_holder": 255}
 SINGLE_CHOICE = {"auction_type": AUCTION_TYPES, "start_price_type": PRICE_TYPES}
 CLEARABLE = {"auction_type", "start_price_type", "category", "regions"}
 
@@ -128,23 +130,51 @@ def _param_rows(p: dict, d: str) -> list[list[InlineKeyboardButton]]:
 
     return [
         [
+            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0", d=d),
             _btn(mark(t.BTN_P_DEAL, "auction_type" in p), "deal", d=d),
+        ],
+        [
+            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg", d=d),
+            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city", d=d),
+        ],
+        [
+            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords", d=d),
             _btn(mark(t.BTN_P_TYPE, "start_price_type" in p), "type", d=d),
         ],
         [
-            _btn(mark(t.BTN_P_CATEGORY, "category" in p), "cat", "0", d=d),
-            _btn(mark(t.BTN_P_REGION, "regions" in p), "reg", d=d),
-        ],
-        [
-            _btn(mark(t.BTN_P_CITY, "city" in p), "txt", "city", d=d),
-            _btn(mark(t.BTN_P_KEYWORDS, "keywords" in p), "txt", "keywords", d=d),
-        ],
-        [
             _btn(mark(t.BTN_P_ORGANIZER, "customer_name" in p), "txt", "customer_name", d=d),
-            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price", d=d),
+            _btn(mark(t.BTN_P_BALANCE, "balance_holder" in p), "txt", "balance_holder", d=d),
         ],
-        [_btn(mark(t.BTN_P_AREA, "area_unit" in p), "area", d=d)],
+        [
+            _btn(mark(t.BTN_P_PRICE, "min_price" in p or "max_price" in p), "price", d=d),
+            _btn(mark(t.BTN_P_AREA, "area_unit" in p), "area", d=d),
+        ],
     ]
+
+
+def _category_norm(name: str) -> str:
+    """Same category under slightly different wording («Оренда державного майна» =
+    «Оренда держмайна», «сільськогосподарського призначення» = «с/г»)."""
+    s = " ".join(name.casefold().replace("’", "'").split())
+    for long, short in (
+        ("державного майна", "держмайна"),
+        ("сільськогосподарського призначення", "с/г"),
+        ("сільськогосподарські", "с/г"),
+    ):
+        s = s.replace(long, short)
+    return s
+
+
+def sort_categories(names: list[str]) -> list[str]:
+    """«Що шукаєте?» order from the product owner; unknown ones keep API order at the end."""
+    rank = {_category_norm(n): i for i, n in enumerate(t.CATEGORY_ORDER)}
+    return sorted(names, key=lambda n: rank.get(_category_norm(n), len(rank)))
+
+
+def balance_holder_mismatch(p: dict) -> bool:
+    allowed = {_category_norm(c) for c in t.BALANCE_HOLDER_CATEGORIES}
+    category = _category_norm(p.get("category") or "")
+    return "balance_holder" in p and bool(category) and category not in allowed
 
 
 def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
@@ -156,6 +186,8 @@ def render_screen(params: dict) -> tuple[str, InlineKeyboardMarkup]:
         return render_grid(p)
     lines = [t.SEARCH_TITLE, "", "<b>Обрані параметри:</b>"]
     lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+    if balance_holder_mismatch(p):
+        lines += ["", t.BALANCE_HOLDER_HINT]
     rows = _param_rows(p, "")
     rows.append([_btn(t.BTN_RUN_SEARCH, "run")])
     rows.append([_btn(t.BTN_CLEAR_PARAMS, "clear"), _btn(t.BTN_MAIN_MENU, "menu")])
@@ -171,6 +203,8 @@ def render_edit_screen(
     if summary:
         lines.append("<b>Параметри:</b>")
         lines += [f"• {label}: {html.escape(value)}" for label, value in summary]
+        if balance_holder_mismatch(params):
+            lines += ["", t.BALANCE_HOLDER_HINT]
     else:
         lines.append(t.MON_EDIT_NO_PARAMS)
     lines += ["", t.MON_EDIT_HINT]
@@ -226,6 +260,29 @@ def input_keyboard(
     bottom.append(_btn(t.BTN_CANCEL, "cancel", d=d))
     rows.append(bottom)
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def range_keyboard(
+    step: str, unit: str = "", d: str = "", clear: bool = False
+) -> InlineKeyboardMarkup:
+    """Price/area input: «Пропустити» + a step back instead of «Скасувати».
+    step: price_min | price_max | area_min | area_max."""
+    back = {
+        "price_min": _btn(t.BTN_BACK_TO_PARAMS, "grid", d=d),
+        "price_max": _btn(t.BTN_BACK_TO_MIN_PRICE, "price", d=d),
+        "area_min": _btn(t.BTN_BACK_TO_UNIT, "area", d=d),
+        "area_max": _btn(t.BTN_BACK_TO_MIN_AREA, "unit", unit, d=d),
+    }[step]
+    rows = [[_btn(t.BTN_SKIP, "skip", d=d)]]
+    bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", step.split("_")[0], d=d)] if clear else []
+    bottom.append(back)
+    rows.append(bottom)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def step_keyboard(data: dict, which: str) -> InlineKeyboardMarkup:
+    kind = data.get("range", "price")
+    return range_keyboard(f"{kind}_{which}", data.get("unit", ""), d=data.get("d", ""))
 
 
 def regions_keyboard(selected: list[str], d: str = "") -> InlineKeyboardMarkup:
@@ -412,6 +469,7 @@ def create_router() -> Router:
             log.exception("Failed to load categories")
             await callback.answer(t.CATEGORIES_UNAVAILABLE, show_alert=True)
             return
+        names = sort_categories(names)
         page = int(callback_data.v or 0) if callback_data.v.isdigit() else 0
         markup = categories_keyboard(names, page, params.get("category"), d=callback_data.d)
         await edit_or_send(callback, t.CHOOSE_CATEGORY, markup)
@@ -529,8 +587,9 @@ def create_router() -> Router:
         if field not in TEXT_PROMPTS:
             await state.clear()
             return
-        if not value or value.startswith("/") or len(value) > MAX_TEXT_LEN:
-            await message.answer(t.BAD_TEXT, reply_markup=input_keyboard(d=d))
+        limit = TEXT_LIMITS.get(field, MAX_TEXT_LEN)
+        if not value or value.startswith("/") or len(value) > limit:
+            await message.answer(t.BAD_TEXT.format(limit=limit), reply_markup=input_keyboard(d=d))
             return
         await state.clear()
         await change_params(session, user, d, **{field: value})
@@ -577,7 +636,7 @@ def create_router() -> Router:
         await state.set_state(SearchInput.min_value)
         await state.set_data({"range": "price", "d": d})
         has = "min_price" in p or "max_price" in p
-        markup = input_keyboard(skip=True, clear_target="price" if has else None, d=d)
+        markup = range_keyboard("price_min", d=d, clear=has)
         await edit_or_send(callback, t.PROMPT_MIN_PRICE, markup)
         await callback.answer()
 
@@ -594,7 +653,9 @@ def create_router() -> Router:
             [_btn(f"{label}", "unit", code, d=d)]
             for code, label in (("ha.", "Гектари (га)"), ("sq.m.", "Квадратні метри (м²)"))
         ]
-        rows.append(back_row("area" if "area_unit" in p else None, d=d))
+        bottom = [_btn(t.BTN_CLEAR_FIELD, "fclr", "area", d=d)] if "area_unit" in p else []
+        bottom.append(_btn(t.BTN_BACK_TO_PARAMS, "grid", d=d))
+        rows.append(bottom)
         await edit_or_send(callback, t.CHOOSE_AREA_UNIT, InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
 
@@ -607,7 +668,7 @@ def create_router() -> Router:
         await state.set_state(SearchInput.min_value)
         await state.set_data({"range": "area", "unit": callback_data.v, "d": d})
         unit = AREA_UNITS[callback_data.v]
-        markup = input_keyboard(skip=True, d=d)
+        markup = range_keyboard("area_min", callback_data.v, d=d)
         await edit_or_send(callback, t.PROMPT_MIN_AREA.format(unit=unit), markup)
         await callback.answer()
 
@@ -626,7 +687,7 @@ def create_router() -> Router:
             prompt = t.PROMPT_MAX_PRICE
         else:
             prompt = t.PROMPT_MAX_AREA.format(unit=AREA_UNITS[data["unit"]])
-        markup = input_keyboard(skip=True, d=data.get("d", ""))
+        markup = step_keyboard(data, "max")
         if edit is not None:
             await edit_or_send(edit, prompt, markup)
         else:
@@ -665,11 +726,12 @@ def create_router() -> Router:
 
     @router.message(SearchInput.min_value, F.text)
     async def on_min_input(message: Message, state: FSMContext) -> None:
-        d = (await state.get_data()).get("d", "")
         try:
             value = parse_number(message.text or "")
         except ValueError:
-            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True, d=d))
+            await message.answer(
+                t.BAD_NUMBER, reply_markup=step_keyboard(await state.get_data(), "min")
+            )
             return
         await _after_min(message.bot, message.chat.id, state, str(value))
 
@@ -678,17 +740,16 @@ def create_router() -> Router:
         message: Message, state: FSMContext, session: AsyncSession, user: User
     ) -> None:
         data = await state.get_data()
-        d = data.get("d", "")
         try:
             value = parse_number(message.text or "")
         except ValueError:
-            await message.answer(t.BAD_NUMBER, reply_markup=input_keyboard(skip=True, d=d))
+            await message.answer(t.BAD_NUMBER, reply_markup=step_keyboard(data, "max"))
             return
         min_value = data.get("min")
         if min_value is not None and value < Decimal(min_value):
             await message.answer(
                 t.BAD_RANGE.format(min=format_number(min_value)),
-                reply_markup=input_keyboard(skip=True, d=d),
+                reply_markup=step_keyboard(data, "max"),
             )
             return
         await _finish_range(message.bot, message.chat.id, state, session, user, str(value))

@@ -15,11 +15,11 @@
       <select name="auction_type"><option value="">не важливо</option>
         {% for k, label in auction_types.items() %}<option value="{{ k }}" {{ 'selected' if v.get('auction_type') == k }}>{{ label }}</option>{% endfor %}
       </select></label>
-    <label class="fl">Тип аукціону
+    <label class="fl">Англійський/Голландський
       <select name="start_price_type"><option value="">не важливо</option>
         {% for k, label in price_types.items() %}<option value="{{ k }}" {{ 'selected' if v.get('start_price_type') == k }}>{{ label }}</option>{% endfor %}
       </select></label>
-    <label class="fl">Категорія
+    <label class="fl">Що шукаєте?
       {% if categories %}
       <select name="category"><option value="">не важливо</option>
         {% for c in categories %}<option value="{{ c }}" {{ 'selected' if v.get('category') == c }}>{{ c }}</option>{% endfor %}
@@ -38,6 +38,8 @@
     <label class="fl">Ключові слова<input name="keywords" maxlength="200" value="{{ v.get('keywords', '') }}"></label>
     <label class="fl">Організатор<input name="customer_name" maxlength="200" value="{{ v.get('customer_name', '') }}"></label>
   </div>
+  <label class="fl">Балансоутримувач <span class="muted">(ЄДРПОУ або назва; є лише в оренді держмайна, малій і великій приватизації)</span>
+    <input name="balance_holder" maxlength="255" value="{{ v.get('balance_holder', '') }}"></label>
   <div class="grid3">
     <label class="fl">Ціна від, грн<input name="min_price" inputmode="decimal" value="{{ v.get('min_price', '') }}"></label>
     <label class="fl">Ціна до, грн<input name="max_price" inputmode="decimal" value="{{ v.get('max_price', '') }}"></label>

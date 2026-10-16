@@ -125,6 +125,8 @@ async def build(
             row.changes = d.get("changes") or []
         elif t in KINDS["consult"][1] and d.get("request_id"):
             row.link = (f"заявка №{d['request_id']}", f"/admin/consultations/{d['request_id']}")
+        elif t in (events.FEEDBACK_CREATED, events.FEEDBACK_REPLIED) and d.get("feedback_id"):
+            row.link = (f"звернення №{d['feedback_id']}", f"/admin/feedback/{d['feedback_id']}")
         elif t == events.BOT_STARTED and d.get("source"):
             row.details.append(f"джерело: {d['source']}")
         elif t == events.MARKETING_PREFERENCE_CHANGED and "marketing_enabled" in d:

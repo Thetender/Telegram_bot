@@ -38,6 +38,8 @@
       <label>Текст кнопки (необов'язково)<input type="text" name="button_text" value="{{ c.button_text or '' }}" maxlength="64" placeholder="Переглянути аукціони"></label>
       <label style="flex:1">Посилання кнопки<input type="url" name="button_url" value="{{ c.button_url or '' }}" placeholder="https://thetender.com.ua/..."></label>
     </div>
+    <label class="check"><input type="checkbox" name="feedback_invite" value="1" {{ 'checked' if c.feedback_invite }}>
+      Додати запрошення до відгуку: текст «💬 Допоможіть нам стати кращими!…» в кінці і кнопку «💬 Залишити відгук»</label>
     <div><b>Кому:</b>
       <label><input type="radio" name="audience_type" value="ALL" {{ 'checked' if c.audience_type == 'ALL' }}> Усім користувачам</label>
       <label><input type="radio" name="audience_type" value="SELECTED" {{ 'checked' if c.audience_type == 'SELECTED' }}> Вибраним ({{ selected|length }})</label>

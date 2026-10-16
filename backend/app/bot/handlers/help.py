@@ -171,6 +171,11 @@ def create_router() -> Router:
             text = await bot_texts.get(session, STATIC_SECTIONS[section])
             text = links.tag_text_links(text, links.SUPPORT, section)
             await show(callback, text, kb.back_to_help())
+        elif section == "fb":
+            from app.bot.handlers.feedback import show_topics
+
+            await state.clear()
+            await show_topics(callback)
         elif section == "consult":
             from app.bot.handlers.consultation import show_consultation
 

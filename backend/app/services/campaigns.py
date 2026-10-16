@@ -194,6 +194,10 @@ def render(
                 click_tag(campaign.id),
             )
         rows.append([InlineKeyboardButton(text=campaign.button_text, url=url)])
+    if campaign.feedback_invite:
+        from app.bot.handlers.feedback import leave_feedback_button
+
+        rows.append([leave_feedback_button()])
     rows.append(
         [
             InlineKeyboardButton(
@@ -203,6 +207,10 @@ def render(
         ]
     )
     text = tag_text_links(campaign.message.strip(), DIGEST, f"campaign_{campaign.id}")
+    if campaign.feedback_invite:
+        from app.bot import texts as bot_texts
+
+        text = f"{text}\n\n{bot_texts.FEEDBACK_INVITE}"
     if preview:
         text = f"🧪 <i>Тестове повідомлення розсилки</i>\n\n{text}"
     return text, InlineKeyboardMarkup(inline_keyboard=rows)

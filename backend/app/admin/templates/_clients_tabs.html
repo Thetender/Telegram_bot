@@ -1,0 +1,4 @@
+<div class="tabs clients-tabs">
+  <a href="/admin/consultations" class="{{ 'active' if clients_tab == 'consult' }}">💬 Консультації</a>
+  <a href="/admin/feedback" class="{{ 'active' if clients_tab == 'feedback' }}">🗣 Відгуки та пропозиції{% if fb_new %}<span class="count">{{ fb_new }}</span>{% endif %}</a>
+</div>

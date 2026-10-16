@@ -49,6 +49,18 @@ REGIONS: tuple[str, ...] = (
     "Чернігівська область",
 )
 
+# Cities with a special status are not offered as an «Область» any more (product
+# decision). They stay valid values, so existing monitorings keep working and a
+# previously chosen one can still be removed.
+HIDDEN_REGIONS = ("Київ", "Севастополь")
+
+
+def selectable_regions(chosen: list[str] | None = None) -> list[tuple[int, str]]:
+    """(index in REGIONS, name) for the «Область» list: hidden ones only if chosen."""
+    keep = set(chosen or [])
+    return [(i, r) for i, r in enumerate(REGIONS) if r not in HIDDEN_REGIONS or r in keep]
+
+
 AUCTION_TYPES = {"sale": "Продаж", "rent": "Оренда"}
 PRICE_TYPES = {"eng": "Англійський", "hol": "Голландський"}
 AREA_UNITS = {"ha.": "га", "sq.m.": "м²"}

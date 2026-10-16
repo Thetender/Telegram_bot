@@ -438,3 +438,13 @@ async def test_balance_holder_is_searched_and_hinted(harness):
     assert t.BALANCE_HOLDER_HINT in h.tg.texts()[-1]
     await tap(h, "run")
     assert h.tender.calls[-1][1]["balance_holder"] == "міністерство оборони"
+
+
+def test_kyiv_and_sevastopol_are_not_offered_as_regions():
+    from app.bot.handlers.search import regions_keyboard
+
+    labels = [b.text for row in regions_keyboard([]).inline_keyboard for b in row]
+    assert "Київ" not in labels and "Севастополь" not in labels and "Київська" in labels
+    # A value chosen earlier stays visible so it can be removed.
+    labels = [b.text for row in regions_keyboard(["Київ"]).inline_keyboard for b in row]
+    assert "✅ Київ" in labels

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Звернення №{{ fb.id }}{% endblock %}
+{% block content %}
+<p><a href="/admin/feedback">← Відгуки та пропозиції</a></p>
+<h1>Звернення №{{ fb.id }} <span class="badge fb-{{ fb.status }}">{{ statuses[fb.status] }}</span></h1>
+<div class="grid2">
+  <div class="card"><dl class="kv">
+    <dt>Тема</dt><dd>{{ topics.get(fb.topic, fb.topic) }}</dd>
+    <dt>Користувач</dt><dd>{% if client %}<a href="/admin/users/{{ client.id }}">{{ client.name or '—' }}</a>{% else %}—{% endif %}</dd>
+    <dt>Telegram</dt><dd>{% if client and client.username %}@{{ client.username }} · {% endif %}<span class="muted">{{ client.telegram_id if client else '' }}</span></dd>
+    <dt>Телефон</dt><dd>{{ (client.phone if client else None) or '—' }}</dd>
+    <dt>Створено</dt><dd>{{ fmt_dt(fb.created_at) }}</dd>
+    {% if handler %}<dt>Обробляє</dt><dd>{{ handler.name or ('@' ~ handler.username) }}</dd>{% endif %}
+  </dl></div>
+  <div class="card"><div style="font-weight:600;margin-bottom:6px">Контекст на момент звернення</div>
+    <div class="muted small">Моніторингів: {{ fb.context.get('monitorings', 0) }}</div>
+    {% if search_summary %}<div class="muted small" style="margin-top:6px">Параметри пошуку:</div>
+      <ul style="margin:4px 0 0;padding-left:18px">{% for label, value in search_summary %}<li><span class="muted">{{ label }}:</span> {{ value }}</li>{% endfor %}</ul>
+    {% else %}<div class="muted small" style="margin-top:6px">Пошук не налаштований.</div>{% endif %}
+    <form method="post" action="/admin/feedback/{{ fb.id }}/status" class="row-actions" style="margin-top:12px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for k, label in statuses.items() %}<button type="submit" name="status" value="{{ k }}" class="small {{ '' if fb.status == k else 'secondary' }}">{{ label }}</button>{% endfor %}
+    </form>
+  </div>
+</div>
+
+<h2>Листування</h2>
+<div class="thread">
+  {% for m in msgs %}
+  <div class="bubble {{ 'out' if m.direction == 'OUT' else 'in' }}">
+    <div class="meta">{% if m.direction == 'OUT' %}{{ (authors[m.author_id].name if m.author_id in authors else 'Команда') }} → користувачу{% else %}{{ client.name if client else 'Користувач' }}{% endif %} · {{ fmt_dt(m.created_at) }}</div>
+    {% if m.text %}<div class="body">{{ m.text }}</div>{% endif %}
+    {% if m.photo_file_id %}<a href="/admin/feedback/photo/{{ m.id }}" target="_blank"><img src="/admin/feedback/photo/{{ m.id }}" alt="Скриншот" loading="lazy"></a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<form method="post" action="/admin/feedback/{{ fb.id }}/reply" class="card stack" style="margin-top:16px;max-width:760px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div style="font-weight:600">Відповісти користувачу в бот</div>
+  <textarea name="text" rows="5" maxlength="3500" placeholder="Дякуємо! Ми виправили…" style="width:100%"></textarea>
+  <label class="check"><input type="checkbox" name="resolve" value="1" checked> Позначити звернення як «Вирішено»</label>
+  <div class="muted small">Користувач отримає повідомлення від бота з кнопкою «💬 Відповісти» — його відповідь з'явиться тут.</div>
+  <div class="row-actions"><button type="submit">Надіслати</button></div>
+</form>
+<style>
+.badge.fb-NEW{background:#fef0c7;color:#93370d}.badge.fb-IN_PROGRESS{background:#eef3ff;color:#1f4fd1}.badge.fb-RESOLVED{background:#dcfae6;color:#067647}
+.thread{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.bubble{padding:10px 14px;border-radius:12px;background:#fff;border:1px solid #eaecf0;max-width:85%}
+.bubble.out{align-self:flex-end;background:#eef3ff;border-color:#c7d4f8}
+.bubble .meta{font-size:12px;color:#667085;margin-bottom:4px}
+.bubble .body{white-space:pre-wrap;overflow-wrap:anywhere}
+.bubble img{display:block;max-width:100%;max-height:360px;margin-top:8px;border-radius:8px}
+</style>
+{% endblock %}

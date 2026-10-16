@@ -354,6 +354,46 @@ class NotificationDelivery(Base):
     created_at: Mapped[datetime] = utcnow_column(nullable=False)
 
 
+class Feedback(Base):
+    """«Відгуки та пропозиції» from the bot (Help → 💬). One thread per feedback:
+    the first user message and the follow-ups/replies are FeedbackMessage rows."""
+
+    __tablename__ = "feedback"
+    __table_args__ = (
+        CheckConstraint("status IN ('NEW','IN_PROGRESS','RESOLVED')", name="status_valid"),
+        Index("ix_feedback_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    topic: Mapped[str] = mapped_column(String(16), nullable=False)  # bug|idea|search|other
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="NEW")
+    # What the user was doing: current search filters, number of monitorings.
+    context: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+    updated_at: Mapped[datetime] = utcnow_column(nullable=False, onupdate=func.now())
+
+
+class FeedbackMessage(Base):
+    __tablename__ = "feedback_messages"
+    __table_args__ = (CheckConstraint("direction IN ('IN','OUT')", name="direction_valid"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(
+        ForeignKey("feedback.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)  # IN = from user
+    text: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    photo_file_id: Mapped[str | None] = mapped_column(String(255))  # Telegram file_id
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = utcnow_column(nullable=False)
+
+
 class Campaign(Base):
     """Marketing message from the Dashboard (FR §13). The recipient list is
     materialized (campaign_recipients) at confirmation: an immutable snapshot."""
@@ -369,6 +409,10 @@ class Campaign(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     button_text: Mapped[str | None] = mapped_column(String(64))
     button_url: Mapped[str | None] = mapped_column(Text)
+    # Adds the universal «Допоможіть нам стати кращими!» text + «💬 Залишити відгук».
+    feedback_invite: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     audience_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ALL")
     selected_user_ids: Mapped[list[int]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")

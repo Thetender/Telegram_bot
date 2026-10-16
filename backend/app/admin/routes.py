@@ -31,6 +31,8 @@ from app.models import (
     AppError,
     Campaign,
     ConsultationRequest,
+    Feedback,
+    FeedbackMessage,
     LegalDocumentVersion,
     Monitoring,
     User,
@@ -40,6 +42,7 @@ from app.services import admin as svc
 from app.services import bot_texts, events, legal
 from app.services import campaigns as campaigns_svc
 from app.services import consultations as consult_svc
+from app.services import feedback as feedback_svc
 from app.services import privacy as privacy_svc
 from app.services import users as users_svc
 from app.services import watchers as watchers_svc
@@ -67,6 +70,8 @@ def history_kinds() -> dict:
 
 EVENT_LABELS = {
     events.USER_REGISTERED: "Реєстрація",
+    events.FEEDBACK_CREATED: "💬 Залишив відгук",
+    events.FEEDBACK_REPLIED: "Відповідь на відгук",
     events.BOT_STARTED: "Відкрив бота",
     events.SEARCH_STARTED: "Відкрив пошук",
     events.SEARCH_COMPLETED: "Пошук",
@@ -102,6 +107,9 @@ DATA_DELETED_TEXT = (
     "Щоб знову скористатися сервісом, натисніть /start."
 )
 FLASH = {
+    "reply_sent": ("ok", "Відповідь надіслано користувачу в бот ✅"),
+    "reply_empty": ("warn", "Напишіть текст відповіді."),
+    "reply_failed": ("warn", "Не вдалося надіслати: користувач заблокував бот або видалив дані."),
     "monitoring_created": ("ok", "Моніторинг створено ✅ Клієнт отримав повідомлення в боті."),
     "watcher_added": ("ok", "Відповідального додано: він отримуватиме копії сповіщень."),
     "watcher_removed": ("ok", "Відповідального прибрано."),
@@ -603,8 +611,143 @@ def create_router() -> APIRouter:
             rows=rows,
             tab=tab,
             counts=counts,
+            fb_new=await feedback_svc.count_new(session),
             page=page,
             pages=pages,
+        )
+
+    # ---------------- feedback («Відгуки та пропозиції») ----------------
+
+    @router.get("/feedback", response_class=HTMLResponse)
+    async def feedback_list(
+        request: Request, session: DB, ctx: Admin, status: str = "", topic: str = "", page: int = 1
+    ) -> Response:
+        rows, total = await feedback_svc.list_feedback(session, status, topic, page)
+        return render(
+            request,
+            "feedback.html",
+            ctx,
+            "consultations",
+            rows=rows,
+            total=total,
+            status=status,
+            topic=topic,
+            page=page,
+            pages=max(1, -(-total // feedback_svc.PAGE_SIZE)),
+            topics=feedback_svc.TOPICS,
+            statuses=feedback_svc.STATUSES,
+            fb_new=await feedback_svc.count_new(session),
+        )
+
+    async def _feedback(session: AsyncSession, feedback_id: int) -> Feedback:
+        fb = await session.get(Feedback, feedback_id)
+        if fb is None:
+            raise HTTPException(404)
+        return fb
+
+    @router.get("/feedback/{feedback_id}", response_class=HTMLResponse)
+    async def feedback_detail(
+        request: Request, session: DB, ctx: Admin, feedback_id: int
+    ) -> Response:
+        from app.services.search_params import summary_lines
+
+        fb = await _feedback(session, feedback_id)
+        client = await session.get(User, fb.user_id)
+        msgs = await feedback_svc.messages(session, fb.id)
+        author_ids = {m.author_id for m in msgs if m.direction == "OUT" and m.author_id}
+        authors = (
+            {u.id: u for u in await session.scalars(select(User).where(User.id.in_(author_ids)))}
+            if author_ids
+            else {}
+        )
+        handler = await session.get(User, fb.handled_by) if fb.handled_by else None
+        return render(
+            request,
+            "feedback_detail.html",
+            ctx,
+            "consultations",
+            fb=fb,
+            client=client,
+            msgs=msgs,
+            authors=authors,
+            handler=handler,
+            topics=feedback_svc.TOPICS,
+            statuses=feedback_svc.STATUSES,
+            search_summary=summary_lines((fb.context or {}).get("search")),
+            fb_new=await feedback_svc.count_new(session),
+        )
+
+    @router.post("/feedback/{feedback_id}/status")
+    async def feedback_status(
+        session: DB, ctx: Admin, feedback_id: int, csrf: str = Form(""), status: str = Form("")
+    ) -> Response:
+        auth.check_csrf(ctx, csrf)
+        fb = await _feedback(session, feedback_id)
+        await feedback_svc.set_status(session, fb, status, ctx.user)
+        return redirect_back(f"/admin/feedback/{fb.id}", "saved")
+
+    @router.post("/feedback/{feedback_id}/reply")
+    async def feedback_reply(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        feedback_id: int,
+        csrf: str = Form(""),
+        text: str = Form(""),
+        resolve: str = Form(""),
+    ) -> Response:
+        from app.bot.handlers.feedback import reply_keyboard
+        from app.bot.texts import FEEDBACK_FROM_TEAM
+
+        auth.check_csrf(ctx, csrf)
+        fb = await _feedback(session, feedback_id)
+        text = text.replace("\r\n", "\n").strip()
+        if not text:
+            return redirect_back(f"/admin/feedback/{fb.id}", "reply_empty")
+        client = await session.get(User, fb.user_id)
+        if client is None or client.anonymized_at is not None:
+            return redirect_back(f"/admin/feedback/{fb.id}", "reply_failed")
+        try:
+            await request.app.state.bot.send_message(
+                client.telegram_id,
+                FEEDBACK_FROM_TEAM.format(id=fb.id, text=html.escape(text)),
+                reply_markup=reply_keyboard(fb.id),
+            )
+        except TelegramAPIError as exc:
+            log.info("Feedback %s reply not delivered: %s", fb.id, exc)
+            return redirect_back(f"/admin/feedback/{fb.id}", "reply_failed")
+        await feedback_svc.add_message(session, fb, "OUT", text, None, ctx.user.id)
+        await feedback_svc.set_status(
+            session, fb, "RESOLVED" if resolve == "1" else "IN_PROGRESS", ctx.user
+        )
+        await events.log_event(
+            session,
+            events.FEEDBACK_REPLIED,
+            user_id=client.id,
+            actor_user_id=ctx.user.id,
+            data={"feedback_id": fb.id},
+        )
+        return redirect_back(f"/admin/feedback/{fb.id}", "reply_sent")
+
+    @router.get("/feedback/photo/{message_id}")
+    async def feedback_photo(
+        request: Request, session: DB, ctx: Admin, message_id: int
+    ) -> Response:
+        """Screenshot from Telegram, streamed through the Dashboard (file_id → bytes)."""
+        msg = await session.get(FeedbackMessage, message_id)
+        if msg is None or not msg.photo_file_id:
+            raise HTTPException(404)
+        bot: Bot = request.app.state.bot
+        try:
+            file = await bot.get_file(msg.photo_file_id)
+            data = await bot.download_file(file.file_path) if file.file_path else None
+        except TelegramAPIError as exc:
+            log.info("Feedback photo %s not available: %s", message_id, exc)
+            data = None
+        if data is None:
+            raise HTTPException(404)
+        return Response(
+            data.read(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"}
         )
 
     @router.get("/consultations/{request_id}", response_class=HTMLResponse)
@@ -737,6 +880,7 @@ def create_router() -> APIRouter:
         button_text: str = Form(""),
         button_url: str = Form(""),
         audience_type: str = Form("ALL"),
+        feedback_invite: str = Form(""),
     ) -> Response:
         auth.check_csrf(ctx, csrf)
         campaign = await _campaign(session, campaign_id)
@@ -747,6 +891,7 @@ def create_router() -> APIRouter:
         campaign.button_text = button_text.strip()[:64] or None
         campaign.button_url = button_url.strip() or None
         campaign.audience_type = "SELECTED" if audience_type == "SELECTED" else "ALL"
+        campaign.feedback_invite = feedback_invite == "1"
         return redirect(f"/admin/campaigns/{campaign_id}", "saved")
 
     @router.post("/campaigns/{campaign_id}/select")

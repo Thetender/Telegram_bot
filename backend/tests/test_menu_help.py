@@ -72,6 +72,7 @@ async def test_help_sections(harness):
     labels = [[b.text for b in row] for row in markup.inline_keyboard]
     assert labels == [
         [t.BTN_FAQ, t.BTN_TARIFFS],
+        [t.BTN_FEEDBACK],
         [t.BTN_NOTIFICATION_SETTINGS],
         [t.BTN_DELETE_DATA],
         [t.BTN_MAIN_MENU],

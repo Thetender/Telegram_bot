@@ -16,6 +16,7 @@ from app.bot.handlers import (
     admin_invite,
     consultation,
     fallback,
+    feedback,
     help,
     menu,
     monitorings,
@@ -91,6 +92,7 @@ def create_dispatcher(
         consultation.create_router(),
         monitorings.create_router(),
         admin_invite.create_router(),
+        feedback.create_router(),
         help.create_router(),
         fallback.create_router(),
     )

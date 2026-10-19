@@ -53,7 +53,8 @@ from app.services.search_params import (
 
 log = logging.getLogger(__name__)
 
-CATEGORIES_PER_PAGE = 8
+CATEGORIES_PER_PAGE = 30  # all on one screen
+CATEGORY_PAIR_MAX = 20  # longer names get a row of their own
 TEXT_PROMPTS = {
     "city": t.PROMPT_CITY,
     "keywords": t.PROMPT_KEYWORDS,
@@ -344,7 +345,23 @@ def categories_keyboard(
     pages = max(1, -(-len(names) // CATEGORIES_PER_PAGE))
     page = min(max(page, 0), pages - 1)
     chunk = names[page * CATEGORIES_PER_PAGE : (page + 1) * CATEGORIES_PER_PAGE]
-    rows = [[_btn(f"✅ {n}" if n == current else n, "catset", category_key(n), d=d)] for n in chunk]
+    # Two per row; a long name takes the whole row so it is not cut off on phones.
+    rows: list[list[InlineKeyboardButton]] = []
+    pending: list[InlineKeyboardButton] = []
+    for n in chunk:
+        btn = _btn(f"✅ {n}" if n == current else n, "catset", category_key(n), d=d)
+        if len(n) > CATEGORY_PAIR_MAX:
+            if pending:
+                rows.append(pending)
+                pending = []
+            rows.append([btn])
+            continue
+        pending.append(btn)
+        if len(pending) == 2:
+            rows.append(pending)
+            pending = []
+    if pending:
+        rows.append(pending)
     nav = []
     if page > 0:
         nav.append(_btn("⬅️", "cat", str(page - 1), d=d))

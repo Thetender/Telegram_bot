@@ -474,3 +474,18 @@ def test_kyiv_and_sevastopol_are_not_offered_as_regions():
     # A value chosen earlier stays visible so it can be removed.
     labels = [b.text for row in regions_keyboard(["Київ"]).inline_keyboard for b in row]
     assert "✅ Київ" in labels
+
+
+def test_categories_fit_one_screen_two_per_row():
+    from app.bot.handlers.search import categories_keyboard
+
+    names = [
+        "Нерухомість", "Земельні торги с/г", "Земельні торги не с/г", "Землі водного фонду",
+        "Оренда держмайна", "Мала приватизація", "Транспортні засоби", "Банкрутство",
+        "Велика приватизація", "Єдині майнові комплекси", "Надра", "Оренда вагонів УЗ",
+    ]  # fmt: skip
+    rows = [[b.text for b in r] for r in categories_keyboard(names, 0, None).inline_keyboard]
+    assert rows[0] == ["Нерухомість", "Земельні торги с/г"]
+    assert ["Єдині майнові комплекси"] in rows  # long name: own row
+    assert not any("/" in b and b[0].isdigit() for r in rows for b in r)  # no pages
+    assert sum(len(r) for r in rows[:-1]) == 12

@@ -166,10 +166,43 @@ def _category_norm(name: str) -> str:
     return s
 
 
+# Recognizes a category by key words, so the order holds whatever exact wording
+# the API uses («Оренда державного майна», «Земельні ділянки с/г призначення» …).
+# Checked top-down: the more specific rules come first.
+_CATEGORY_RULES: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (11, ("вагон",)),
+    (2, ("не с/г",)),
+    (2, ("нес/г",)),
+    (2, ("несільськогосп",)),
+    (2, ("не сільськогосп",)),
+    (3, ("водн",)),
+    (1, ("с/г",)),
+    (1, ("сільськогосп",)),
+    (4, ("оренд", "держ")),
+    (5, ("мал", "приват")),
+    (8, ("велик", "приват")),
+    (9, ("майнов", "комплекс")),
+    (6, ("транспорт",)),
+    (7, ("банкрут",)),
+    (10, ("надр",)),
+    (0, ("нерухом",)),
+)
+
+
+def category_rank(name: str) -> int:
+    s = _category_norm(name)
+    exact = {_category_norm(n): i for i, n in enumerate(t.CATEGORY_ORDER)}
+    if s in exact:
+        return exact[s]
+    for rank, needed in _CATEGORY_RULES:
+        if all(word in s for word in needed):
+            return rank
+    return len(t.CATEGORY_ORDER)
+
+
 def sort_categories(names: list[str]) -> list[str]:
     """«Що шукаєте?» order from the product owner; unknown ones keep API order at the end."""
-    rank = {_category_norm(n): i for i, n in enumerate(t.CATEGORY_ORDER)}
-    return sorted(names, key=lambda n: rank.get(_category_norm(n), len(rank)))
+    return sorted(names, key=category_rank)
 
 
 def balance_holder_mismatch(p: dict) -> bool:

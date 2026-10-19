@@ -222,7 +222,7 @@ def summary_lines(params: dict[str, Any] | None) -> list[tuple[str, str]]:
     if "regions" in p:
         lines.append(("Область", ", ".join(region_label(r) for r in p["regions"])))
     if "city" in p:
-        lines.append(("Місто", p["city"]))
+        lines.append(("Нас. пункт", p["city"]))
     if "keywords" in p:
         lines.append(("Ключові слова", p["keywords"]))
     if "customer_name" in p:

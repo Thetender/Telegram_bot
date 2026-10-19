@@ -173,7 +173,7 @@ async def test_list_detail_edit_save_rename_delete(harness):
     await etap(h, "grid")
     await etap(h, "txt", "city")
     await say(h, "Біла Церква")
-    assert "• Місто: Біла Церква" in h.tg.texts()[-1]
+    assert "• Нас. пункт: Біла Церква" in h.tg.texts()[-1]
     await etap(h, "set", "auction_type=rent")
     assert await draft(h) == {"auction_type": "rent"}  # search draft unchanged
     async with h.sf() as s:

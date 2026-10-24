@@ -513,7 +513,7 @@ async def test_admin_edits_and_deletes_a_clients_monitoring(session_factory):
             row = await s.get(Monitoring, row.id)
             assert row.name == "Продаж Львів" and row.params["auction_type"] == "sale"
             ev = await s.scalar(select(Event).where(Event.event_type == "MONITOR_UPDATED"))
-            assert ev.user_id == client.id and ev.data.get("by_admin")
+            assert ev.user_id == client.id and ev.event_data.get("by_admin")
         told = [m for m in d.tg.sent() if int(m.chat_id) == CLIENT_TG]
         assert told and "оновлено" in told[-1].text
 

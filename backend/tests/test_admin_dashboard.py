@@ -479,3 +479,61 @@ async def test_admin_creates_a_monitoring_for_a_client(session_factory):
         assert "msg=watcher_removed" in r.headers["location"]
         async with d.sf() as s:
             assert await s.scalar(select(MonitoringWatcher)) is None
+
+
+async def test_admin_edits_and_deletes_a_clients_monitoring(session_factory):
+    from app.models import Event, Monitoring
+
+    async with dashboard(session_factory) as d:
+        await register(d, ADMIN_TG, ROLE_ADMIN)
+        client = await register(d, CLIENT_TG)
+        await d.login(ADMIN_TG)
+        csrf = await d.csrf()
+        await d.client.post(
+            f"/admin/users/{client.id}/monitorings",
+            data={"csrf": csrf, "auction_type": "rent", "regions": ["Київ"], "name": "Оренда"},
+        )
+        async with d.sf() as s:
+            row = await s.scalar(select(Monitoring))
+
+        page = await d.client.get(f"/admin/users/{client.id}")
+        assert "✏️ Змінити" in page.text and "🗑 Видалити" in page.text
+        form = await d.client.get(f"/admin/users/{client.id}/monitorings/{row.id}/edit")
+        assert form.status_code == 200 and "Редагування моніторингу" in form.text
+        assert 'value="Оренда"' in form.text and 'value="Київ" checked' in form.text
+
+        d.tg.clear()
+        r = await d.client.post(
+            f"/admin/users/{client.id}/monitorings/{row.id}",
+            data={"csrf": csrf, "auction_type": "sale", "regions": ["Львівська область"],
+                  "name": "Продаж Львів"},
+        )  # fmt: skip
+        assert "msg=monitoring_updated" in r.headers["location"]
+        async with d.sf() as s:
+            row = await s.get(Monitoring, row.id)
+            assert row.name == "Продаж Львів" and row.params["auction_type"] == "sale"
+            ev = await s.scalar(select(Event).where(Event.event_type == "MONITOR_UPDATED"))
+            assert ev.user_id == client.id and ev.data.get("by_admin")
+        told = [m for m in d.tg.sent() if int(m.chat_id) == CLIENT_TG]
+        assert told and "оновлено" in told[-1].text
+
+        d.tg.clear()
+        r = await d.client.post(
+            f"/admin/users/{client.id}/monitorings/{row.id}/delete", data={"csrf": csrf}
+        )
+        assert "msg=monitoring_deleted" in r.headers["location"]
+        async with d.sf() as s:
+            assert (await s.get(Monitoring, row.id)).deleted_at is not None
+        told = [m for m in d.tg.sent() if int(m.chat_id) == CLIENT_TG]
+        assert told and "видалено" in told[-1].text
+        # Gone: no longer editable, other users' monitorings are not reachable.
+        assert (
+            await d.client.get(f"/admin/users/{client.id}/monitorings/{row.id}/edit")
+        ).status_code == 404
+
+
+async def test_monitoring_edit_needs_a_session(session_factory):
+    async with dashboard(session_factory) as d:
+        client = await register(d, CLIENT_TG)
+        r = await d.client.post(f"/admin/users/{client.id}/monitorings/1/delete", data={})
+        assert r.status_code in (303, 403)

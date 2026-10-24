@@ -145,6 +145,7 @@ async def update(
     row: Monitoring,
     name: str,
     params: dict[str, Any],
+    by: User | None = None,
 ) -> Monitoring:
     old_name, old_params = row.name, normalize(row.params)
     ext = await tender.update_monitoring(row.external_id, tender_user_id(user), name, params)
@@ -157,12 +158,22 @@ async def update(
             "monitoring_id": row.id,
             "name": row.name,
             "changes": param_changes(old_name, old_params, row.name, normalize(row.params)),
+            **_by(by),
         },
     )
     return row
 
 
-async def delete(session: AsyncSession, tender: TenderClient, user: User, row: Monitoring) -> None:
+def _by(staff: User | None) -> dict[str, Any]:
+    """Who on the staff made the change from the Dashboard (none: the user did)."""
+    if staff is None:
+        return {}
+    return {"by_admin": staff.name or (f"@{staff.username}" if staff.username else str(staff.id))}
+
+
+async def delete(
+    session: AsyncSession, tender: TenderClient, user: User, row: Monitoring, by: User | None = None
+) -> None:
     try:
         await tender.delete_monitoring(row.external_id)
     except TenderError as exc:
@@ -173,7 +184,7 @@ async def delete(session: AsyncSession, tender: TenderClient, user: User, row: M
         session,
         events.MONITOR_DELETED,
         user_id=user.id,
-        data={"monitoring_id": row.id, "name": row.name},
+        data={"monitoring_id": row.id, "name": row.name, **_by(by)},
     )
 
 

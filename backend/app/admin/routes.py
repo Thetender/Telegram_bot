@@ -23,7 +23,7 @@ from sqlalchemy.orm import undefer
 
 from app.admin import auth
 from app.bot.handlers import consultation as consult_ui
-from app.bot.texts import MON_CREATED_BY_STAFF
+from app.bot.texts import MON_CREATED_BY_STAFF, MON_DELETED_BY_STAFF, MON_UPDATED_BY_STAFF
 from app.config import Settings
 from app.models import (
     ROLE_ADMIN,
@@ -111,6 +111,12 @@ FLASH = {
     "reply_empty": ("warn", "Напишіть текст відповіді."),
     "reply_failed": ("warn", "Не вдалося надіслати: користувач заблокував бот або видалив дані."),
     "monitoring_created": ("ok", "Моніторинг створено ✅ Клієнт отримав повідомлення в боті."),
+    "monitoring_updated": ("ok", "Моніторинг змінено ✅ Клієнт отримав повідомлення в боті."),
+    "monitoring_deleted": ("ok", "Моніторинг видалено ✅ Клієнт отримав повідомлення в боті."),
+    "monitoring_delete_failed": (
+        "warn",
+        "The Tender не відповів — моніторинг не видалено. Спробуйте ще раз за хвилину.",
+    ),
     "watcher_added": ("ok", "Відповідального додано: він отримуватиме копії сповіщень."),
     "watcher_removed": ("ok", "Відповідального прибрано."),
     "invited": ("ok", "Запрошення надіслано в бот. Роль стане активною після підтвердження."),
@@ -445,6 +451,7 @@ def create_router() -> APIRouter:
         client: User,
         values: dict | None = None,
         errors: list[str] | None = None,
+        monitoring: Monitoring | None = None,
     ) -> Response:
         try:
             from app.bot.handlers.search import sort_categories
@@ -460,6 +467,7 @@ def create_router() -> APIRouter:
             ctx,
             "users",
             client=client,
+            monitoring=monitoring,
             v=values or {},
             errors=errors or [],
             categories=categories,
@@ -521,6 +529,93 @@ def create_router() -> APIRouter:
         except TelegramAPIError as exc:
             log.info("Client %s not told about monitoring %s: %s", client.id, row.id, exc)
         return redirect_back(f"/admin/users/{client.id}", "monitoring_created")
+
+    async def _client_monitoring(
+        session: AsyncSession, user_id: int, monitoring_id: int
+    ) -> tuple[User, Monitoring]:
+        client = await _client(session, user_id)
+        row = await session.get(Monitoring, monitoring_id)
+        if row is None or row.user_id != client.id or row.deleted_at is not None:
+            raise HTTPException(404)
+        return client, row
+
+    async def _tell_client(request: Request, client: User, text: str) -> None:
+        try:
+            await request.app.state.bot.send_message(client.telegram_id, text)
+        except TelegramAPIError as exc:
+            log.info("Client %s not told about a monitoring change: %s", client.id, exc)
+
+    @router.get("/users/{user_id}/monitorings/{monitoring_id}/edit", response_class=HTMLResponse)
+    async def monitoring_edit(
+        request: Request, session: DB, ctx: Admin, user_id: int, monitoring_id: int
+    ) -> Response:
+        client, row = await _client_monitoring(session, user_id, monitoring_id)
+        return await _monitoring_form(
+            request,
+            session,
+            ctx,
+            client,
+            watchers_svc.form_values(row.name, row.params),
+            monitoring=row,
+        )
+
+    @router.post("/users/{user_id}/monitorings/{monitoring_id}")
+    async def monitoring_update(
+        request: Request, session: DB, ctx: Admin, user_id: int, monitoring_id: int
+    ) -> Response:
+        """Admin edits a client's monitoring (any: created by the client or by staff)."""
+        from app.integrations.thetender import TenderError
+        from app.services import monitorings as mon_svc
+
+        form = await request.form()
+        auth.check_csrf(ctx, str(form.get("csrf", "")))
+        client, row = await _client_monitoring(session, user_id, monitoring_id)
+        raw = {k: [str(x) for x in form.getlist(k)] for k in form.keys()}
+        params, errors = watchers_svc.params_from_form(raw)
+        name = " ".join(str(form.get("name", "")).split())[: mon_svc.MAX_NAME_LEN]
+        values = {k: (v if k == "regions" else v[0]) for k, v in raw.items()}
+        if errors:
+            return await _monitoring_form(request, session, ctx, client, values, errors, row)
+        name = name or mon_svc.suggested_name(params)
+        try:
+            row = await mon_svc.update(
+                session, request.app.state.tender, client, row, name, params, by=ctx.user
+            )
+        except TenderError as exc:
+            await session.rollback()
+            log.warning("Dashboard monitoring %s not updated: %s", monitoring_id, exc)
+            return await _monitoring_form(
+                request, session, ctx, client, values,
+                ["The Tender не прийняв зміни, спробуйте ще раз за хвилину."], row,
+            )  # fmt: skip
+        await session.commit()
+        await _tell_client(request, client, MON_UPDATED_BY_STAFF.format(name=html.escape(row.name)))
+        return redirect_back(f"/admin/users/{client.id}", "monitoring_updated")
+
+    @router.post("/users/{user_id}/monitorings/{monitoring_id}/delete")
+    async def monitoring_delete(
+        request: Request,
+        session: DB,
+        ctx: Admin,
+        user_id: int,
+        monitoring_id: int,
+        csrf: str = Form(""),
+    ) -> Response:
+        from app.integrations.thetender import TenderError
+        from app.services import monitorings as mon_svc
+
+        auth.check_csrf(ctx, csrf)
+        client, row = await _client_monitoring(session, user_id, monitoring_id)
+        name = row.name
+        try:
+            await mon_svc.delete(session, request.app.state.tender, client, row, by=ctx.user)
+        except TenderError as exc:
+            await session.rollback()
+            log.warning("Dashboard monitoring %s not deleted: %s", monitoring_id, exc)
+            return redirect_back(f"/admin/users/{client.id}", "monitoring_delete_failed")
+        await session.commit()
+        await _tell_client(request, client, MON_DELETED_BY_STAFF.format(name=html.escape(name)))
+        return redirect_back(f"/admin/users/{client.id}", "monitoring_deleted")
 
     @router.post("/users/{user_id}/monitorings/{monitoring_id}/watchers")
     async def monitoring_watchers(

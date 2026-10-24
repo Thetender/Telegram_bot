@@ -143,3 +143,12 @@ def params_from_form(form: dict[str, list[str]]) -> tuple[dict, list[str]]:
     if not params and not errors:
         errors.append("Вкажіть хоча б один параметр")
     return params, errors
+
+
+def form_values(name: str, params: dict) -> dict:
+    """A saved monitoring → values for the Dashboard form (inverse of params_from_form)."""
+    clean = normalize(params)
+    values: dict = {k: ("" if v is None else str(v)) for k, v in clean.items() if k != "regions"}
+    values["regions"] = list(clean.get("regions") or [])
+    values["name"] = name
+    return values

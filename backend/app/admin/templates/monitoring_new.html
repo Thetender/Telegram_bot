@@ -1,11 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Новий моніторинг{% endblock %}
+{% block title %}{{ "Редагування моніторингу" if monitoring else "Новий моніторинг" }}{% endblock %}
 {% block content %}
 <p><a href="/admin/users/{{ client.id }}">◀️ {{ client.name or 'Користувач' }}</a></p>
+{% if monitoring %}
+<h1>✏️ Редагування моніторингу «{{ monitoring.name }}»</h1>
+<p class="muted">Зміни зберігаються в The Tender від імені клієнта. Клієнт отримає повідомлення в боті, що моніторинг оновлено.</p>
+{% else %}
 <h1>🔔 Новий моніторинг для {{ client.name or 'клієнта' }}</h1>
 <p class="muted">Моніторинг створюється в The Tender від імені клієнта. Клієнт отримає повідомлення в боті та бачитиме його в «Моїх моніторингах».</p>
+{% endif %}
 {% if errors %}<div class="flash warn">{% for e in errors %}{{ e }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
-<form method="post" action="/admin/users/{{ client.id }}/monitorings" class="card mon-form">
+<form method="post" action="/admin/users/{{ client.id }}/monitorings{% if monitoring %}/{{ monitoring.id }}{% endif %}" class="card mon-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label class="fl">Назва <span class="muted">(необов'язково — інакше з параметрів)</span>
     <input name="name" maxlength="100" value="{{ v.get('name', '') }}" placeholder="Напр. Оренда · Київська"></label>
@@ -52,14 +57,14 @@
       <select name="area_unit">{% for k, label in area_units.items() %}<option value="{{ k }}" {{ 'selected' if v.get('area_unit') == k }}>{{ label }}</option>{% endfor %}</select></label>
   </div>
 
-  {% if staff %}
+  {% if staff and not monitoring %}
   <div class="fl">Відповідальні <span class="muted">(отримуватимуть копії сповіщень з даними клієнта)</span></div>
   <div class="regions">
     {% for s in staff %}<label class="chk"><input type="checkbox" name="watchers" value="{{ s.id }}" {{ 'checked' if (s.id|string) in v.get('watchers', []) }}> {{ s.name or ('@' ~ s.username) }}</label>{% endfor %}
   </div>
   {% endif %}
 
-  <div class="row-actions"><button type="submit">Створити моніторинг</button>
+  <div class="row-actions"><button type="submit">{{ "Зберегти зміни" if monitoring else "Створити моніторинг" }}</button>
     <a class="btn secondary" href="/admin/users/{{ client.id }}">Скасувати</a></div>
 </form>
 <style>

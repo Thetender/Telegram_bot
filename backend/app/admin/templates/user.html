@@ -69,7 +69,7 @@
 </div>
 {% if p.monitorings %}
 <div class="table-wrap" style="margin-top:10px"><table>
-  <thead><tr><th>Назва</th><th>Параметри</th><th>Відповідальні</th><th>Хто створив</th><th>Створено</th></tr></thead>
+  <thead><tr><th>Назва</th><th>Параметри</th><th>Відповідальні</th><th>Хто створив</th><th>Створено</th><th></th></tr></thead>
   <tbody>{% for m in p.monitorings %}
     <tr><td>{{ m.name }}</td>
       <td>{% for label, value in summary(m.params) %}<span class="muted">{{ label }}:</span> {{ value }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
@@ -92,10 +92,19 @@
         {% elif not ws %}<span class="muted">—</span>{% endif %}
       </td>
       <td>{{ creators.get(m.id, 'Користувач') }}</td>
-      <td>{{ fmt_dt(m.created_at) }}</td></tr>
+      <td>{{ fmt_dt(m.created_at) }}</td>
+      <td class="mon-actions">
+        <a class="btn small secondary" href="/admin/users/{{ p.user.id }}/monitorings/{{ m.id }}/edit">✏️ Змінити</a>
+        <form class="inline" method="post" action="/admin/users/{{ p.user.id }}/monitorings/{{ m.id }}/delete"
+              onsubmit="return confirm('Видалити моніторинг «{{ m.name|e|replace("'", "’") }}»? Клієнт перестане отримувати сповіщення за ним і отримає повідомлення в боті.')">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button type="submit" class="small danger">🗑 Видалити</button></form>
+      </td></tr>
   {% endfor %}</tbody></table></div>
 <style>
 .watchers{min-width:200px}
+.mon-actions{white-space:nowrap}
+.mon-actions form{display:inline}
 .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;margin:0 4px 4px 0;border-radius:99px;background:#eef3ff;color:#1f4fd1;font-size:13px}
 .chip button{border:0;background:none;color:#667085;cursor:pointer;padding:0 4px;font-size:15px;line-height:1}
 .chip button:hover{color:#c0362c}

@@ -123,6 +123,8 @@ async def build(
             if t == events.MONITOR_CREATED and "params" in d:
                 row.details.append(filters_text(d["params"]))
             row.changes = d.get("changes") or []
+            if d.get("by_admin"):
+                row.details.append(f"змінив адмін: {d['by_admin']}")
         elif t in KINDS["consult"][1] and d.get("request_id"):
             row.link = (f"заявка №{d['request_id']}", f"/admin/consultations/{d['request_id']}")
         elif t in (events.FEEDBACK_CREATED, events.FEEDBACK_REPLIED) and d.get("feedback_id"):

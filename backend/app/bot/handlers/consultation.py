@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import filters
+from app.bot import keyboards as kb
 from app.bot import texts as t
 from app.config import Settings
 from app.models import ConsultationRequest, User
@@ -175,6 +176,9 @@ async def show_my_requests(
             suffix = " " + (result if req.status == "COMPLETED" else "⛔️")
         label = f"№{req.id} · {req.contact_name or '—'} · {when}{suffix}"
         rows.append([_btn(label[:60], "view", req.id)])
+    rows.append(
+        [InlineKeyboardButton(text=t.BTN_MAIN_MENU, callback_data=kb.HelpCb(section="home").pack())]
+    )
     text = "\n".join(lines)
     markup = InlineKeyboardMarkup(inline_keyboard=rows)
     if edit is not None and isinstance(edit.message, Message):

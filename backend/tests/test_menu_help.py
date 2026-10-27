@@ -175,6 +175,6 @@ async def test_faq_questions_open_answers(harness):
     labels = [row[0].text for row in markup.inline_keyboard]
     assert labels[0] == "Що таке The Tender?" and len(labels) == 20  # 19 + back
     harness.tg.clear()
-    await harness.feed(callback_update(UID, kb.HelpCb(section="q17").pack()))
+    await harness.feed(callback_update(UID, kb.HelpCb(section="q18").pack()))
     assert harness.tg.texts()[-1].startswith("<b>Куди звертатися з питаннями?</b>")
     assert "info@thetender.com.ua" in harness.tg.texts()[-1]

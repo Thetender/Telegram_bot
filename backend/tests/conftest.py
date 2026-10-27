@@ -91,3 +91,13 @@ async def harness(session_factory) -> BotHarness:
     )
     dp = create_dispatcher(settings, session_factory, tender)
     return BotHarness(bot=bot, tg=tg, dp=dp, sf=session_factory, tender=tender)
+
+
+@pytest.fixture(autouse=True)
+def _utm_source_reset():
+    """create_app() sets the bot's utm_source globally; keep tests independent."""
+    from app.services import links
+
+    links.configure_utm("telegram")
+    yield
+    links.configure_utm("telegram")

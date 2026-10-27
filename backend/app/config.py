@@ -54,8 +54,8 @@ class Settings(BaseModel):
     timezone: str = "Europe/Kyiv"
 
     log_level: str = "INFO"
-    # utm_source on links to thetender.com.ua. Empty: telegram_prod on prod,
-    # telegram elsewhere — the same names The Tender API uses (doc 22.10.2026).
+    # utm_source on links to thetender.com.ua. Empty: telegram on prod,
+    # telegram_test elsewhere (product decision 27.10.2026).
     utm_source: str | None = None
 
     # Background delivery of new-auction notifications (off in unit tests,
@@ -84,7 +84,7 @@ class Settings(BaseModel):
     def utm_source_value(self) -> str:
         if self.utm_source:
             return self.utm_source
-        return "telegram_prod" if self.environment == "prod" else "telegram"
+        return "telegram" if self.environment == "prod" else "telegram_test"
 
     @property
     def tracked_links_enabled(self) -> bool:

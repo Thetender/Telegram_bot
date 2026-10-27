@@ -98,7 +98,7 @@ UTM_MEDIUM = "bot"
 
 
 def configure_utm(source: str) -> None:
-    """telegram_prod on the main bot, telegram on the test bot (Settings.utm_source_value)."""
+    """telegram on the main bot, telegram_test on the test bot (Settings.utm_source_value)."""
     global UTM_SOURCE
     clean = re.sub(r"[^a-z0-9_-]+", "", (source or "").lower())
     UTM_SOURCE = clean or "telegram"

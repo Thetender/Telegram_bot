@@ -54,11 +54,11 @@ def test_utm_source_follows_environment():
     from app.config import Settings
 
     prod = Settings(telegram_bot_token="x", environment="prod")
-    assert prod.utm_source_value == "telegram_prod"
-    assert Settings(telegram_bot_token="x", environment="test").utm_source_value == "telegram"
+    assert prod.utm_source_value == "telegram"
+    assert Settings(telegram_bot_token="x", environment="test").utm_source_value == "telegram_test"
     try:
-        links.configure_utm(prod.utm_source_value)
-        url = links.with_utm("https://thetender.com.ua/a?utm_source=telegram_prod", links.LOT_ALERT)
-        assert "utm_source=telegram_prod" in url
+        links.configure_utm("telegram_test")
+        url = links.with_utm("https://thetender.com.ua/a?utm_source=telegram", links.LOT_ALERT)
+        assert "utm_source=telegram_test" in url and "utm_source=telegram&" not in url
     finally:
         links.configure_utm("telegram")

@@ -63,6 +63,11 @@ async def test_my_requests_only_for_managers(harness, db):
     harness.tg.clear()
     await harness.feed(message_update(UID, t.BTN_MY_REQUESTS))
     assert harness.tg.texts()[-1].startswith(t.MY_REQUESTS_TITLE)
+    inline = harness.tg.sent()[-1].reply_markup.inline_keyboard
+    assert inline[-1][0].text == t.BTN_MAIN_MENU
+    harness.tg.clear()
+    await harness.feed(callback_update(UID, inline[-1][0].callback_data))
+    assert harness.tg.texts()[-1] == t.MAIN_MENU
 
 
 async def test_help_sections(harness):

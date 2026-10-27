@@ -99,6 +99,7 @@ class Auction:
     start_price_type: str | None = None
     auction_type: str | None = None
     balance_holder: str | None = None  # «Назва (ЄДРПОУ)» or None
+    has_auction_start: bool = False  # False: the field was absent (demo data)
 
     @classmethod
     def from_api(cls, d: dict[str, Any]) -> Auction:
@@ -113,6 +114,7 @@ class Auction:
             start_price_type=d.get("start_price_type"),
             auction_type=d.get("auction_type"),
             balance_holder=balance_holder_text(d.get("balance_holder")),
+            has_auction_start="auctionStart" in d,
         )
 
 

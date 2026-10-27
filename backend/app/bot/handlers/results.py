@@ -20,7 +20,7 @@ from app.config import Settings
 from app.integrations.thetender import Auction, TenderClient, TenderError
 from app.integrations.thetender.client import DEFAULT_PAGESIZE
 from app.models import SearchSnapshot, User
-from app.services import events, links
+from app.services import auction_info, events, links
 from app.services import search as search_svc
 from app.services.links import tracked_url
 from app.services.search_params import format_number, normalize, to_api
@@ -53,10 +53,14 @@ def format_auction(auction: Auction, link: str, position: int) -> str:
     name = " ".join((auction.name or "").split())
     if len(name) > MAX_TITLE:
         name = name[: MAX_TITLE - 1].rstrip() + "…"
+    meta = auction_info.lines(
+        auction.status, auction.auction_start if auction.has_auction_start else auction_info.MISSING
+    )
     return (
         f"<b>{position}. {html.escape(name)}</b>\n"
         f"{t.RESULT_PRICE.format(price=price)}\n"
-        f'<a href="{html.escape(link, quote=True)}">{t.RESULT_LINK}</a>'
+        + "".join(f"{html.escape(line)}\n" for line in meta)
+        + f'<a href="{html.escape(link, quote=True)}">{t.RESULT_LINK}</a>'
     )
 
 

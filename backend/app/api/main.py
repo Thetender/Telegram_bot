@@ -26,7 +26,7 @@ from app.db import make_engine, make_session_factory
 from app.integrations.thetender import TenderClient, make_tender_client
 from app.logging_setup import setup_logging
 from app.models import LegalDocumentVersion, User
-from app.services import alerts, error_log, events, notifications
+from app.services import alerts, error_log, events, links, notifications
 from app.services.links import allowed_hosts, is_allowed_destination, is_bot_user_agent, parse_token
 from app.workers.delivery import DeliveryWorker
 
@@ -57,6 +57,7 @@ def create_app(
         app.state.tender = tender or make_tender_client(settings)
         app.state.dp = create_dispatcher(settings, session_factory, app.state.tender)
         alerts.configure(app.state.bot, session_factory, settings.environment)
+        links.configure_utm(settings.utm_source_value)
         error_log.configure(session_factory)
         app.state.worker = DeliveryWorker(app.state.bot, session_factory, settings)
         if settings.delivery_worker_enabled:

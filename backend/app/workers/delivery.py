@@ -36,7 +36,7 @@ from app.models import (
     NotificationDelivery,
     User,
 )
-from app.services import alerts, events, links
+from app.services import alerts, auction_info, events, links
 from app.services import campaigns as campaigns_svc
 from app.services import users as users_svc
 from app.services.links import tracked_url
@@ -69,6 +69,10 @@ def _title(a: dict) -> str:
     return name if len(name) <= 1500 else name[:1499].rstrip() + "…"
 
 
+def _meta(a: dict) -> str:
+    return "".join(f"\n{html.escape(line)}" for line in auction_info.from_payload(a))
+
+
 def render(delivery: NotificationDelivery, user: User, settings: Settings) -> str:
     a = delivery.auction or {}
     price = a.get("price")
@@ -90,6 +94,7 @@ def render(delivery: NotificationDelivery, user: User, settings: Settings) -> st
         monitoring=html.escape(delivery.monitoring_name or "—"),
         title=html.escape(_title(a)),
         price=html.escape(price_text),
+        meta=_meta(a),
         link=html.escape(link, quote=True),
     )
     if not link:
@@ -110,6 +115,7 @@ def render_for_watcher(delivery: NotificationDelivery, client: User) -> str:
         monitoring=html.escape(delivery.monitoring_name or "—"),
         title=html.escape(_title(a)),
         price=html.escape(price_text),
+        meta=_meta(a),
         link=html.escape(url, quote=True),
     )
     if not url:

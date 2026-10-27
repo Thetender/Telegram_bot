@@ -54,6 +54,9 @@ class Settings(BaseModel):
     timezone: str = "Europe/Kyiv"
 
     log_level: str = "INFO"
+    # utm_source on links to thetender.com.ua. Empty: telegram_prod on prod,
+    # telegram elsewhere — the same names The Tender API uses (doc 22.10.2026).
+    utm_source: str | None = None
 
     # Background delivery of new-auction notifications (off in unit tests,
     # which drive the worker step by step).
@@ -76,6 +79,12 @@ class Settings(BaseModel):
             seed = "tracked-links:" + self.telegram_webhook_secret.get_secret_value()
             return hashlib.sha256(seed.encode()).digest()
         return None
+
+    @property
+    def utm_source_value(self) -> str:
+        if self.utm_source:
+            return self.utm_source
+        return "telegram_prod" if self.environment == "prod" else "telegram"
 
     @property
     def tracked_links_enabled(self) -> bool:
@@ -118,6 +127,7 @@ def load_settings() -> Settings:
         "consultation_phone": _env("CONSULTATION_PHONE", "+38 067 333 78 00"),
         "timezone": _env("TIMEZONE", "Europe/Kyiv"),
         "log_level": _env("LOG_LEVEL", "INFO"),
+        "utm_source": _env("UTM_SOURCE"),
     }
     return Settings.model_validate({k: v for k, v in data.items() if v is not None})
 

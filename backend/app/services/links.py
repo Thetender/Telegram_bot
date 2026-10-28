@@ -98,10 +98,10 @@ UTM_MEDIUM = "bot"
 
 
 def configure_utm(source: str) -> None:
-    """telegram on the main bot, telegram_test on the test bot (Settings.utm_source_value)."""
+    """telegram on the main bot; empty on the test bot — then links carry no UTM
+    tags at all (existing ones are removed), so tests never reach GA4 reports."""
     global UTM_SOURCE
-    clean = re.sub(r"[^a-z0-9_-]+", "", (source or "").lower())
-    UTM_SOURCE = clean or "telegram"
+    UTM_SOURCE = re.sub(r"[^a-z0-9_-]+", "", (source or "").lower())
 
 
 # utm_campaign values by scenario.
@@ -134,6 +134,8 @@ def with_utm(url: str, campaign: str, content: str | None = None) -> str:
         parts = parts._replace(path="/")
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
              if not k.lower().startswith("utm_")]  # fmt: skip
+    if not UTM_SOURCE:  # test bot: no tags
+        return urlunsplit(parts._replace(query=urlencode(query)))
     query += [("utm_source", UTM_SOURCE), ("utm_medium", UTM_MEDIUM)]
     query.append(("utm_campaign", _slug(campaign)))
     if content:

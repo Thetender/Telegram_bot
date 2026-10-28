@@ -54,8 +54,8 @@ class Settings(BaseModel):
     timezone: str = "Europe/Kyiv"
 
     log_level: str = "INFO"
-    # utm_source on links to thetender.com.ua. Empty: telegram on prod,
-    # telegram_test elsewhere (product decision 27.10.2026).
+    # utm_source on links to thetender.com.ua. Empty: telegram on prod; on the
+    # test bot no UTM tags at all, so tests stay out of GA4 (marketing, 28.10.2026).
     utm_source: str | None = None
 
     # Background delivery of new-auction notifications (off in unit tests,
@@ -82,9 +82,10 @@ class Settings(BaseModel):
 
     @property
     def utm_source_value(self) -> str:
+        """Empty string: links are left without UTM tags."""
         if self.utm_source:
             return self.utm_source
-        return "telegram" if self.environment == "prod" else "telegram_test"
+        return "telegram" if self.environment == "prod" else ""
 
     @property
     def tracked_links_enabled(self) -> bool:

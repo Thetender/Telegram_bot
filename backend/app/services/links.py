@@ -163,7 +163,10 @@ def tag_text_links(text: str, campaign: str, content: str | None = None) -> str:
 
 # ---------- deep links: https://t.me/<bot>?start=<source> ----------
 
-_FIXED_SOURCES = {"site_header", "site_footer", "site_lot", "site_contacts", "ads"}
+_FIXED_SOURCES = {
+    "site_header", "site_footer", "site_lot", "site_contacts", "ads",
+    "site_radar", "site_popup", "site_search",
+}  # fmt: skip
 _GROUP_SOURCE = re.compile(r"^group_[a-z0-9_]{1,40}$")
 
 

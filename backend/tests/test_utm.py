@@ -70,3 +70,11 @@ async def test_deep_link_source_saved_on_registration_and_shown_in_stats(harness
         assert user.acquisition_source == "site_lot"
         o = await overview(s, 30, "Europe/Kyiv")
     assert ("site_lot", 1, 1) in o.sources and (None, 1, 1) in o.sources
+
+
+def test_site_radar_sources_are_accepted():
+    from app.services.links import acquisition_source
+
+    for src in ("site_radar", "site_popup", "site_search"):
+        assert acquisition_source(src) == src
+    assert acquisition_source("site_unknown") is None

@@ -49,6 +49,7 @@ def make_settings(**overrides) -> Settings:
         "database_url": TEST_DATABASE_URL,
         "bot_mode": "polling",
         "delivery_worker_enabled": False,
+        "utm_source": "telegram",  # tests check the main bot's tagging
     }
     data.update(overrides)
     return Settings.model_validate(data)

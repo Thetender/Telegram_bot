@@ -53,12 +53,11 @@ def test_notification_shows_status(monkeypatch):
 def test_utm_source_follows_environment():
     from app.config import Settings
 
-    prod = Settings(telegram_bot_token="x", environment="prod")
-    assert prod.utm_source_value == "telegram"
-    assert Settings(telegram_bot_token="x", environment="test").utm_source_value == "telegram_test"
+    assert Settings(telegram_bot_token="x", environment="prod").utm_source_value == "telegram"
+    assert Settings(telegram_bot_token="x", environment="test").utm_source_value == ""
     try:
-        links.configure_utm("telegram_test")
-        url = links.with_utm("https://thetender.com.ua/a?utm_source=telegram", links.LOT_ALERT)
-        assert "utm_source=telegram_test" in url and "utm_source=telegram&" not in url
+        links.configure_utm("")
+        url = links.with_utm("https://thetender.com.ua/a?utm_source=telegram&x=1", links.LOT_ALERT)
+        assert url == "https://thetender.com.ua/a?x=1"
     finally:
         links.configure_utm("telegram")
